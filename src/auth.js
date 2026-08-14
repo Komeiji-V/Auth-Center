@@ -400,7 +400,7 @@ router.get('/userinfo', createAuthMiddleware(process.env.JWT_SECRET, db), (req, 
   });
 });
 
-// ---- 注册模式开关 + 允许回跳的站点白名单（防开放重定向）----
+// ---- 注册模式开关 + 站点设置 + 允许回跳的站点白名单（防开放重定向）----
 router.get('/config', async (req, res) => {
   try {
     const flags = await db.getRegistrationFlags();
@@ -410,7 +410,12 @@ router.get('/config', async (req, res) => {
         try { return new URL(s.trim()).host; } catch { return s.trim(); }
       })
       .filter(Boolean);
-    res.json({ flags, redirect_hosts: redirectHosts });
+    const site = {
+      site_title: process.env.SITE_TITLE || '认证中心',
+      site_icon: process.env.SITE_ICON || '',
+      site_bg: process.env.SITE_BG || '',
+    };
+    res.json({ flags, redirect_hosts: redirectHosts, site });
   } catch (e) {
     console.error('[config] error:', e);
     res.status(500).json({ error: '服务器内部错误' });

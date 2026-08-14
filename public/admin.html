@@ -8,12 +8,12 @@
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { font-family: system-ui, sans-serif; background: #f5f6f8; color: #222; }
   .wrap { max-width: 980px; margin: 40px auto; padding: 0 16px; }
-  .card { background: #fff; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,.08); padding: 24px; margin-bottom: 20px; }
+  .card { background: #fff; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,.08); padding: 20px; margin-bottom: 20px; }
   h1 { font-size: 20px; margin-bottom: 16px; }
   h2 { font-size: 15px; margin-bottom: 12px; }
   label { font-size: 13px; color: #666; display: block; margin: 10px 0 4px; }
   input, select { padding: 8px 10px; border: 1px solid #ddd; border-radius: 8px; font-size: 14px; }
-  button { padding: 7px 14px; border: none; border-radius: 8px; font-size: 13px; cursor: pointer; background: #4a7cff; color: #fff; margin: 3px; }
+  button { padding: 7px 14px; border: none; border-radius: 8px; font-size: 13px; cursor: pointer; background: #4a7cff; color: #fff; margin: 3px; white-space: nowrap; }
   button:hover { background: #3a66d8; }
   button:disabled { background: #a8bdf5; cursor: not-allowed; }
   .danger { background: #e05252; } .danger:hover { background: #c23f3f; }
@@ -22,9 +22,18 @@
   .orange { background: #d98324; } .orange:hover { background: #b86f1c; }
   .msg { margin: 10px 0; font-size: 13px; }
   .err { color: #d33; } .ok { color: #2a8a3f; }
-  table { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 10px; }
-  th, td { text-align: left; padding: 8px; border-bottom: 1px solid #eee; word-break: break-all; vertical-align: top; }
+  table { width: 100%; table-layout: fixed; border-collapse: collapse; font-size: 13px; margin-top: 10px; }
+  th, td { text-align: left; padding: 9px 8px; border-bottom: 1px solid #eee; word-break: break-all; vertical-align: middle; }
   th { color: #666; font-weight: 600; white-space: nowrap; }
+  th:nth-child(1) { width: 52px; }
+  th:nth-child(2) { width: 15%; }
+  th:nth-child(3) { width: 23%; }
+  th:nth-child(4) { width: 90px; }
+  th:nth-child(5) { width: 20%; }
+  th:nth-child(6) { width: 148px; }
+  .filter-bar { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+  .filter-bar select { margin: 0; }
+  .filter-bar button { margin: 0; }
   .tabs { display: flex; gap: 4px; margin-bottom: 16px; }
   .tab { padding: 8px 18px; border-radius: 8px 8px 0 0; background: #e4e7ec; color: #555; cursor: pointer; }
   .tab.active { background: #fff; color: #222; font-weight: 600; }
@@ -78,13 +87,15 @@
   <div class="card">
     <div id="panel-users" class="panel active">
       <h2>用户列表</h2>
-      <select id="statusFilter">
-        <option value="pending">待审核</option>
-        <option value="active">已通过</option>
-        <option value="banned">已封禁</option>
-        <option value="all">全部</option>
-      </select>
-      <button id="refreshUsers">刷新</button>
+      <div class="filter-bar">
+        <select id="statusFilter">
+          <option value="all">全部</option>
+          <option value="pending">待审核</option>
+          <option value="active">已通过</option>
+          <option value="banned">已封禁</option>
+        </select>
+        <button id="refreshUsers">刷新</button>
+      </div>
       <table>
         <thead><tr>
           <th>ID</th><th>用户名</th><th>邮箱</th><th>状态</th><th>申请说明</th><th>注册时间</th><th>操作</th>
@@ -137,6 +148,7 @@
   </div>
 </div>
 
+<script src="/site.js"></script>
 <script>
 const q = new URLSearchParams(location.search);
 let token = sessionStorage.getItem('admin_token') || '';
@@ -271,6 +283,7 @@ async function loadUsers() {
     if (u.status === 'active' && canManagePrivileged) {
       ops.push('<button class="gray" onclick="editUser(' + u.id + ')">编辑</button>');
     }
+    if (ops.length === 0) ops.push('<span style="color:#bbb;">—</span>');
     tr.innerHTML =
       '<td>' + u.id + '</td>' +
       '<td>' + u.username + ownerBadge + adminBadge + '</td>' +

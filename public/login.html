@@ -6,21 +6,21 @@
 <title>登录</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: system-ui, sans-serif; background: #f5f6f8; color: #222; display: flex; align-items: center; justify-content: center; min-height: 100vh; }
-  .card { background: #fff; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,.08); padding: 32px; width: 340px; }
+  body { font-family: system-ui, sans-serif; background: var(--site-bg, none) center/cover no-repeat fixed, #f5f6f8; color: var(--text-main, #222); display: flex; align-items: center; justify-content: center; min-height: 100vh; }
+  .card { background: var(--card-bg, #fff); border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,.08); padding: 32px; width: 340px; }
   h1 { font-size: 20px; margin-bottom: 20px; text-align: center; }
-  label { display: block; font-size: 13px; color: #666; margin: 12px 0 4px; }
-  input { width: 100%; padding: 10px 12px; border: 1px solid #ddd; border-radius: 8px; font-size: 14px; }
-  input:focus { outline: none; border-color: #4a7cff; }
-  button { width: 100%; margin-top: 18px; padding: 11px; background: #4a7cff; color: #fff; border: none; border-radius: 8px; font-size: 15px; cursor: pointer; }
-  button:hover { background: #3a66d8; }
-  button:disabled { background: #a8bdf5; cursor: not-allowed; }
+  label { display: block; font-size: 13px; color: var(--text-dim, #666); margin: 12px 0 4px; }
+  input { width: 100%; padding: 10px 12px; border: 1px solid #ddd; border-radius: 8px; font-size: 14px; color: var(--text-main, #222); background: rgba(255,255,255,.85); }
+  input:focus { outline: none; border-color: var(--accent, #4a7cff); }
+  button { width: 100%; margin-top: 18px; padding: 11px; background: var(--accent, #4a7cff); color: #fff; border: none; border-radius: 8px; font-size: 15px; cursor: pointer; }
+  button:hover { filter: brightness(1.1); }
+  button:disabled { opacity: .6; cursor: not-allowed; }
   .msg { margin-top: 14px; font-size: 13px; line-height: 1.5; word-break: break-all; }
   .err { color: #d33; }
   .ok { color: #2a8a3f; }
   .debug { color: #b58900; font-family: monospace; }
   .link { margin-top: 14px; font-size: 13px; text-align: center; }
-  .link a { color: #4a7cff; text-decoration: none; }
+  .link a { color: var(--accent, #4a7cff); text-decoration: none; }
   #totpRow { display: block; }
 </style>
 </head>
@@ -42,11 +42,41 @@
   <div class="link">没有账号？<a id="regLink" href="/register">立即注册</a></div>
 </div>
 
+<script src="/site.js"></script>
 <script>
 const q = new URLSearchParams(location.search);
 const redirect = q.get('redirect') || '';
 const REFRESH_KEY = 'auth_refresh_token';
 let allowedHosts = [];
+
+// ---- 背景取色适配（SITE_BG 随机图）----
+(function adaptBgColor() {
+  fetch('/api/config').then(r => r.json()).then((cfg) => {
+    const bg = cfg.site && cfg.site.site_bg;
+    if (!bg) return;
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => {
+      try {
+        const c = document.createElement('canvas');
+        c.width = c.height = 40;
+        const ctx = c.getContext('2d');
+        ctx.drawImage(img, 0, 0, 40, 40);
+        const d = ctx.getImageData(0, 0, 40, 40).data;
+        let r = 0, g = 0, b = 0, n = 0;
+        for (let i = 0; i < d.length; i += 4) { r += d[i]; g += d[i + 1]; b += d[i + 2]; n++; }
+        r = Math.round(r / n); g = Math.round(g / n); b = Math.round(b / n);
+        const lum = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+        const root = document.documentElement;
+        root.style.setProperty('--card-bg', lum > 0.6 ? 'rgba(255,255,255,.92)' : 'rgba(30,26,42,.82)');
+        root.style.setProperty('--text-main', lum > 0.6 ? '#222' : '#f0eef7');
+        root.style.setProperty('--text-dim', lum > 0.6 ? '#666' : '#b9b3cc');
+        root.style.setProperty('--accent', 'rgb(' + r + ',' + g + ',' + b + ')');
+      } catch (e) {}
+    };
+    img.src = bg;
+  }).catch(() => {});
+})();
 
 async function refreshConfig() {
   try {
