@@ -127,11 +127,18 @@ let allowedHosts = [];
         let g = Math.round(best.g / best.n);
         let b = Math.round(best.b / best.n);
 
-        // HSL 少干预：亮度钳制 25%~85%，饱和度低于 25% 才提升
+        // HSL 少干预：亮度钳制 25%~60%（保证白字可读），饱和度低于 25% 才提升
         const hsl = rgbToHsl(r, g, b);
-        hsl[2] = Math.min(0.85, Math.max(0.25, hsl[2]));
+        hsl[2] = Math.min(0.6, Math.max(0.25, hsl[2]));
         if (hsl[1] < 0.25) hsl[1] = 0.25;
-        const rgb = hslToRgb(hsl[0], hsl[1], hsl[2]);
+        let rgb = hslToRgb(hsl[0], hsl[1], hsl[2]);
+        // 对比度保险：与白色对比度不足 4:1 时逐级加深（防亮底白字）
+        const lumOf = (rr, gg, bb) => (0.299 * rr + 0.587 * gg + 0.114 * bb) / 255;
+        for (let i = 0; i < 10; i++) {
+          const ratio = 1.05 / (lumOf(rgb[0], rgb[1], rgb[2]) + 0.05);
+          if (ratio >= 4) break;
+          rgb = rgb.map((v) => Math.round(v * 0.85));
+        }
         document.documentElement.style.setProperty('--accent', 'rgb(' + rgb[0] + ',' + rgb[1] + ',' + rgb[2] + ')');
 
         // 背景与取色同步：把取色的这张图作为背景（转 data URL，避免随机图两次请求不一致）

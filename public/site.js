@@ -1,4 +1,4 @@
-// 站点设置注入：标题/图标/背景（所有页面引入，无主题切换）
+// 站点设置注入：标题/图标（背景由 login 页取色代码统一处理，避免双重加载换图）
 (function () {
   fetch('/api/config')
     .then((r) => r.json())
@@ -14,10 +14,6 @@
           document.head.appendChild(link);
         }
         link.href = site.site_icon;
-      }
-      if (site.site_bg) {
-        const esc = String(site.site_bg).replace(/"/g, '\\"');
-        document.documentElement.style.setProperty('--site-bg', 'url("' + esc + '")');
       }
     })
     .catch(() => {});
