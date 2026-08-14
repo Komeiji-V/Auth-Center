@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>演示小站 - 点方块游戏</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: system-ui, sans-serif; background: #1a1d24; color: #e8e8e8; display: flex; flex-direction: column; align-items: center; padding: 30px 16px; min-height: 100vh; }
+  h1 { font-size: 22px; margin-bottom: 6px; }
+  .sub { color: #888; font-size: 13px; margin-bottom: 20px; }
+  .status { background: #232733; border-radius: 10px; padding: 12px 18px; font-size: 14px; margin-bottom: 20px; text-align: center; max-width: 560px; }
+  .status .guest { color: #f0ad4e; }
+  .status .user { color: #5cb85c; }
+  #game { width: 320px; height: 320px; background: #232733; border-radius: 14px; position: relative; cursor: pointer; user-select: none; touch-action: manipulation; overflow: hidden; }
+  .block { position: absolute; width: 40px; height: 40px; background: #4a7cff; border-radius: 8px; transition: transform .15s; }
+  #score { font-size: 40px; font-weight: 700; margin: 14px 0 4px; }
+  .controls { margin-top: 18px; display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
+  button { padding: 10px 20px; border: none; border-radius: 10px; font-size: 14px; cursor: pointer; }
+  .primary { background: #4a7cff; color: #fff; }
+  .primary:hover { background: #3a66d8; }
+  .ghost { background: #2a2f3d; color: #aaa; }
+  .ghost:hover { background: #333a4d; }
+  .danger { background: #5a2a2a; color: #ff9d9d; }
+  .danger:hover { background: #6e3333; }
+  #msg { margin-top: 12px; font-size: 13px; color: #aaa; min-height: 18px; }
+</style>
+</head>
+<body>
+<h1>点方块游戏</h1>
+<div class="sub">演示站 · 游客可玩，登录后解锁云端存档</div>
+
+<div class="status" id="status">检测登录状态…</div>
+
+<div id="game">
+  <div class="block" id="block" style="left:140px; top:140px;"></div>
+</div>
+<div id="score">0</div>
+<div class="controls">
+  <button class="primary" id="syncBtn">云端同步</button>
+  <button class="ghost" id="upBtn">上传本地到云端</button>
+  <button class="ghost" id="downBtn">下载云端到本地</button>
+  <button class="danger" id="clearBtn">清除云端存档</button>
+</div>
+<div id="msg"></div>
+
+<script>
+const LOCAL_KEY = 'demo_save_local';
+const TOKEN_KEY = 'demo_save_token';
+let AUTH = '';
+let me = { guest: true };
+let score = 0;
+
+// ---------- 登录回跳：URL 带 token 时收入 localStorage 并清掉 URL ----------
+(function () {
+  const q = new URLSearchParams(location.search);
+  const t = q.get('token');
+  if (t) {
+    localStorage.setItem(TOKEN_KEY, t);
+    q.delete('token');
+    const clean = location.pathname + (q.toString() ? '?' + q.toString() : '');
+    history.replaceState(null, '', clean);
+    document.getElementById('msg').textContent = '登录成功！';
+  }
+})();
+
+function setMsg(text) {
+  document.getElementById('msg').textContent = text || '';
+}
+
+function apiRequest(path, options = {}) {
+  const headers = { ...(options.headers || {}) };
+  const t = localStorage.getItem(TOKEN_KEY);
+  if (t) headers['Authorization'] = 'Bearer ' + t;
+  return fetch(path, { ...options, headers }).then(async (r) => {
+    if (r.status === 401) {
+      // access 过期：跳认证中心静默续期（login.html 自动换新后回跳）
+      setMsg('登录状态已过期，正在刷新…');
+      const cur = location.href.split('?')[0];
+      await new Promise((res) => setTimeout(res, 400));
+      location.href = AUTH + '/login?redirect=' + encodeURIComponent(cur);
+      return { status: r.status, data: null };
+    }
+    const data = await r.json().catch(() => ({}));
+    return { status: r.status, data };
+  });
+}
+
+function renderStatus() {
+  const el = document.getElementById('status');
+  if (me.guest) {
+    el.innerHTML = '<span class="guest">游客模式：可游玩，进度仅保存在本机。</span>';
+  } else {
+    el.innerHTML = '<span class="user">已登录：' + me.user.username + '（' + me.user.email + '）</span>，云端存档已解锁';
+  }
+}
+
+async function loadMe() {
+  try {
+    const r = await apiRequest('/api/me');
+    me = r.data && !r.data.guest ? r.data : { guest: true };
+  } catch {
+    me = { guest: true };
+  }
+  renderStatus();
+  const stored = localStorage.getItem(LOCAL_KEY);
+  score = stored ? parseInt(stored, 10) || 0 : 0;
+  document.getElementById('score').textContent = score;
+  if (!me.guest) await loadCloud();
+}
+
+async function loadCloud() {
+  const r = await apiRequest('/api/save');
+  if (r.status === 401) return;
+  if (r.status === 200) {
+    const d = r.data;
+    if (d.data && typeof d.data.score === 'number') {
+      if (d.data.score > score) {
+        score = d.data.score;
+        localStorage.setItem(LOCAL_KEY, String(score));
+        document.getElementById('score').textContent = score;
+        setMsg('云端存档比本地新，已应用（' + score + ' 分）');
+      }
+    }
+  } else if (r.status === 403) {
+    localStorage.removeItem(TOKEN_KEY);
+    me = { guest: true };
+    renderStatus();
+  }
+}
+
+// ---------- 游戏：点击方块 +1 分 ----------
+let pos = { x: 140, y: 140 };
+const game = document.getElementById('game');
+const block = document.getElementById('block');
+
+game.addEventListener('click', (e) => {
+  const rect = game.getBoundingClientRect();
+  pos = {
+    x: Math.min(rect.width - 50, Math.max(0, e.clientX - rect.left - 20)),
+    y: Math.min(rect.height - 50, Math.max(0, e.clientY - rect.top - 20)),
+  };
+  block.style.left = pos.x + 'px';
+  block.style.top = pos.y + 'px';
+  score += 1;
+  document.getElementById('score').textContent = score;
+  localStorage.setItem(LOCAL_KEY, String(score));
+});
+
+// ---------- 云端同步：未登录跳认证中心，登录后解锁 ----------
+document.getElementById('syncBtn').addEventListener('click', () => {
+  if (me.guest) {
+    setMsg('正在跳转到登录页…');
+    const cur = location.href.split('?')[0];
+    setTimeout(() => { location.href = AUTH + '/login?redirect=' + encodeURIComponent(cur); }, 300);
+    return;
+  }
+  upload().then(() => setMsg('已上传本地存档到云端（' + score + ' 分）'));
+});
+
+document.getElementById('upBtn').addEventListener('click', async () => {
+  if (me.guest) return setMsg('请先登录');
+  await upload();
+  setMsg('已上传本地存档到云端（' + score + ' 分）');
+});
+
+async function upload() {
+  const r = await apiRequest('/api/save', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ data: { score } }),
+  });
+  return r.status === 200;
+}
+
+document.getElementById('downBtn').addEventListener('click', async () => {
+  if (me.guest) return setMsg('请先登录');
+  await loadCloud();
+  if (score > 0) setMsg('已下载云端存档（当前 ' + score + ' 分）');
+});
+
+document.getElementById('clearBtn').addEventListener('click', async () => {
+  if (me.guest) return setMsg('请先登录');
+  if (!confirm('确认清除云端存档？')) return;
+  await apiRequest('/api/save', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ data: { score: 0 } }),
+  });
+  setMsg('云端存档已清除');
+});
+
+// ---------- 初始化 ----------
+(async () => {
+  try {
+    const r = await fetch('/api/auth-base');
+    const d = await r.json();
+    AUTH = d.url;
+  } catch {}
+  await loadMe();
+})();
+</script>
+</body>
+</html>

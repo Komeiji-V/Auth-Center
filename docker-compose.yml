@@ -1,0 +1,30 @@
+services:
+  auth:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    # 生产建议只让 caddy 访问，不对外暴露端口；本地调试时可放开
+    ports:
+      - "127.0.0.1:8000:8000"
+
+  demo-app:
+    build: ./demo-app
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      - "127.0.0.1:8001:8001"
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  caddy_data:
+  caddy_config:

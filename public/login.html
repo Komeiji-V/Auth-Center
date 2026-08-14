@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>登录</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: system-ui, sans-serif; background: #f5f6f8; color: #222; display: flex; align-items: center; justify-content: center; min-height: 100vh; }
+  .card { background: #fff; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,.08); padding: 32px; width: 340px; }
+  h1 { font-size: 20px; margin-bottom: 20px; text-align: center; }
+  label { display: block; font-size: 13px; color: #666; margin: 12px 0 4px; }
+  input { width: 100%; padding: 10px 12px; border: 1px solid #ddd; border-radius: 8px; font-size: 14px; }
+  input:focus { outline: none; border-color: #4a7cff; }
+  button { width: 100%; margin-top: 18px; padding: 11px; background: #4a7cff; color: #fff; border: none; border-radius: 8px; font-size: 15px; cursor: pointer; }
+  button:hover { background: #3a66d8; }
+  button:disabled { background: #a8bdf5; cursor: not-allowed; }
+  .msg { margin-top: 14px; font-size: 13px; line-height: 1.5; word-break: break-all; }
+  .err { color: #d33; }
+  .ok { color: #2a8a3f; }
+  .debug { color: #b58900; font-family: monospace; }
+  .link { margin-top: 14px; font-size: 13px; text-align: center; }
+  .link a { color: #4a7cff; text-decoration: none; }
+  #totpRow { display: block; }
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>登录</h1>
+  <form id="form">
+    <label for="account">用户名 / 邮箱</label>
+    <input id="account" autocomplete="username" required>
+    <label for="password">密码</label>
+    <input id="password" type="password" autocomplete="current-password" required>
+    <div id="totpRow">
+      <label for="totp">TOTP 验证码</label>
+      <input id="totp" inputmode="numeric" autocomplete="one-time-code" placeholder="6 位数字（未绑定可留空）">
+    </div>
+    <button id="btn" type="submit">登录</button>
+  </form>
+  <div class="msg" id="msg"></div>
+  <div class="link">没有账号？<a id="regLink" href="/register">立即注册</a></div>
+</div>
+
+<script>
+const q = new URLSearchParams(location.search);
+const redirect = q.get('redirect') || '';
+const REFRESH_KEY = 'auth_refresh_token';
+let allowedHosts = [];
+
+async function refreshConfig() {
+  try {
+    const cfg = await fetch('/api/config').then(r => r.json());
+    allowedHosts = cfg.redirect_hosts || [];
+  } catch (e) {}
+  const rl = document.getElementById('regLink');
+  if (redirect) rl.href = '/register?redirect=' + encodeURIComponent(redirect);
+}
+
+function safeRedirect() {
+  if (!redirect) return null;
+  try {
+    const u = new URL(redirect);
+    if (!allowedHosts.includes(u.host)) return null;
+    return redirect;
+  } catch { return null; }
+}
+
+function goBackWithToken(token) {
+  const target = safeRedirect();
+  if (!target) {
+    showMsg('登录成功！', 'ok');
+    return;
+  }
+  const sep = target.includes('?') ? '&' : '?';
+  location.href = target + sep + 'token=' + encodeURIComponent(token);
+}
+
+function showMsg(html, cls) {
+  const m = document.getElementById('msg');
+  m.innerHTML = html;
+  m.className = 'msg ' + (cls || 'err');
+}
+
+async function silentRefresh() {
+  const target = safeRedirect();
+  const access = localStorage.getItem('auth_access_token');
+  if (access) {
+    const me = await fetch('/api/userinfo', { headers: { Authorization: 'Bearer ' + access } })
+      .then((r) => r.json()).catch(() => null);
+    if (me && me.username) {
+      if (target) { goBackWithToken(access); return; }
+      location.href = '/profile';
+      return;
+    }
+  }
+  const rt = localStorage.getItem(REFRESH_KEY);
+  if (!rt) return;
+  try {
+    const resp = await fetch('/api/refresh', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ refresh_token: rt }),
+    });
+    const data = await resp.json();
+    if (resp.ok && data.token) {
+      localStorage.setItem(REFRESH_KEY, data.refresh_token);
+      localStorage.setItem('auth_access_token', data.token);
+      showMsg('登录状态有效，正在跳转…', 'ok');
+      if (target) { goBackWithToken(data.token); return; }
+      location.href = '/profile';
+      return;
+    }
+    localStorage.removeItem(REFRESH_KEY);
+    localStorage.removeItem('auth_access_token');
+  } catch (e) {}
+}
+
+document.getElementById('form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const btn = document.getElementById('btn');
+  btn.disabled = true;
+  const body = {
+    account: document.getElementById('account').value.trim(),
+    password: document.getElementById('password').value,
+    totp_code: document.getElementById('totp').value.trim() || undefined,
+  };
+  try {
+    const resp = await fetch('/api/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const data = await resp.json();
+    if (!resp.ok) {
+      showMsg(data.error || '登录失败');
+      return;
+    }
+    if (data.need_totp_setup) {
+      localStorage.setItem(REFRESH_KEY, data.refresh_token);
+      localStorage.setItem('auth_access_token', data.token);
+      showMsg('你是管理员，首次登录需先绑定 TOTP：<a href="/totp?redirect=' + encodeURIComponent(location.origin + '/admin') + '">前往绑定</a>', 'ok');
+      return;
+    }
+    localStorage.setItem(REFRESH_KEY, data.refresh_token);
+    localStorage.setItem('auth_access_token', data.token);
+    if (!safeRedirect()) {
+      const links = [];
+      if (data.user && data.user.role === 'admin') links.push('<a href="/admin">管理后台</a>');
+      links.push('<a href="/profile">个人中心</a>');
+      showMsg('登录成功！' + links.join('　'), 'ok');
+      return;
+    }
+    goBackWithToken(data.token);
+  } catch (err) {
+    showMsg('网络错误：' + err.message);
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+refreshConfig();
+silentRefresh();
+</script>
+</body>
+</html>

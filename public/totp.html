@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>绑定 TOTP</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: system-ui, sans-serif; background: #f5f6f8; color: #222; display: flex; align-items: center; justify-content: center; min-height: 100vh; }
+  .card { background: #fff; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,.08); padding: 32px; width: 380px; text-align: center; }
+  h1 { font-size: 20px; margin-bottom: 6px; }
+  .sub { font-size: 13px; color: #666; margin-bottom: 18px; }
+  img.qr { width: 190px; height: 190px; border: 1px solid #eee; border-radius: 8px; margin-bottom: 10px; }
+  .secret { font-family: monospace; font-size: 12px; color: #555; word-break: break-all; background: #f4f5f7; border-radius: 6px; padding: 8px; margin-bottom: 16px; }
+  label { display: block; font-size: 13px; color: #666; margin-bottom: 4px; }
+  input { width: 100%; padding: 10px 12px; border: 1px solid #ddd; border-radius: 8px; font-size: 15px; letter-spacing: 4px; text-align: center; }
+  input:focus { outline: none; border-color: #4a7cff; }
+  button { width: 100%; margin-top: 14px; padding: 11px; background: #4a7cff; color: #fff; border: none; border-radius: 8px; font-size: 15px; cursor: pointer; }
+  button:hover { background: #3a66d8; }
+  button:disabled { background: #a8bdf5; cursor: not-allowed; }
+  .msg { margin-top: 14px; font-size: 13px; line-height: 1.5; }
+  .err { color: #d33; }
+  .ok { color: #2a8a3f; }
+  .link { margin-top: 14px; font-size: 13px; }
+  .link a { color: #4a7cff; text-decoration: none; }
+  #needLogin { display: none; }
+</style>
+</head>
+<body>
+<div class="card" id="needLogin">
+  <h1>需要登录</h1>
+  <p class="sub">请先登录后再绑定 TOTP。</p>
+  <button id="goLogin">去登录</button>
+</div>
+
+<div class="card" id="main" style="display:none;">
+  <h1>绑定 TOTP</h1>
+  <p class="sub">用认证器 App（Google Authenticator / 微软 Authenticator）扫描二维码，或手动输入下方密钥</p>
+  <img id="qr" class="qr" alt="TOTP 二维码">
+  <div class="secret" id="secret"></div>
+  <label>认证器中的 6 位验证码</label>
+  <input id="code" inputmode="numeric" maxlength="6" placeholder="123456">
+  <button id="confirm">确认绑定</button>
+  <div class="msg" id="msg"></div>
+  <div class="link"><a href="/login">返回登录</a></div>
+</div>
+
+<div class="card" id="done" style="display:none;">
+  <h1>绑定成功</h1>
+  <p class="sub">TOTP 已启用，正在进入管理后台…</p>
+</div>
+
+<script>
+const REFRESH_KEY = 'auth_refresh_token';
+const TOKEN_KEY = 'auth_access_token';
+const q = new URLSearchParams(location.search);
+const redirect = q.get('redirect') || location.origin + '/admin';
+let token = '';
+let secret = '';
+
+function msg(text, cls) {
+  const el = document.getElementById('msg');
+  el.textContent = text;
+  el.className = 'msg ' + (cls || 'err');
+}
+
+function api(path, options = {}) {
+  const headers = { 'Content-Type': 'application/json' };
+  if (token) headers['Authorization'] = 'Bearer ' + token;
+  return fetch(path, { ...options, headers }).then(async (r) => {
+    const data = await r.json().catch(() => ({}));
+    return { status: r.status, data };
+  });
+}
+
+async function ensureToken() {
+  let t = localStorage.getItem(TOKEN_KEY) || sessionStorage.getItem('admin_token') || '';
+  if (t) return t;
+  const rt = localStorage.getItem(REFRESH_KEY) || sessionStorage.getItem('admin_refresh') || '';
+  if (!rt) return null;
+  try {
+    const r = await fetch('/api/refresh', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ refresh_token: rt }),
+    });
+    const d = await r.json();
+    if (r.ok && d.token) {
+      localStorage.setItem(TOKEN_KEY, d.token);
+      localStorage.setItem(REFRESH_KEY, d.refresh_token);
+      return d.token;
+    }
+  } catch (e) {}
+  return null;
+}
+
+document.getElementById('goLogin').addEventListener('click', () => {
+  localStorage.setItem(REFRESH_KEY, '');
+  location.href = '/login?redirect=' + encodeURIComponent(location.href);
+});
+
+document.getElementById('confirm').addEventListener('click', async () => {
+  const code = document.getElementById('code').value.trim();
+  if (!code) return msg('请输入验证码');
+  const btn = document.getElementById('confirm');
+  btn.disabled = true;
+  const { status, data } = await api('/api/profile/totp-confirm', { method: 'POST', body: JSON.stringify({ code }) });
+  if (status !== 200) {
+    msg(data.error || '绑定失败');
+    btn.disabled = false;
+    return;
+  }
+  document.getElementById('main').style.display = 'none';
+  document.getElementById('done').style.display = 'block';
+  setTimeout(() => { location.href = redirect; }, 1200);
+});
+
+(async () => {
+  token = await ensureToken();
+  if (!token) {
+    document.getElementById('needLogin').style.display = 'block';
+    return;
+  }
+  const me = await api('/api/userinfo');
+  if (me.status !== 200) {
+    localStorage.removeItem(TOKEN_KEY);
+    document.getElementById('needLogin').style.display = 'block';
+    return;
+  }
+  if (me.data.totp_enabled) {
+    location.href = redirect;
+    return;
+  }
+  const { status, data } = await api('/api/profile/totp-setup', { method: 'POST' });
+  if (status !== 200) {
+    document.getElementById('main').style.display = 'block';
+    msg(data.error || '生成失败');
+    return;
+  }
+  secret = data.secret;
+  document.getElementById('qr').src = data.qr;
+  document.getElementById('secret').textContent = '密钥：' + data.secret;
+  document.getElementById('main').style.display = 'block';
+})();
+</script>
+</body>
+</html>

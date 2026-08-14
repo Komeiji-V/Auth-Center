@@ -1,0 +1,12 @@
+# 把 example.com 换成你的真实域名，重新 docker compose up -d 即可自动签发 HTTPS
+# 认证中心：登录/注册/管理页都走它
+auth.example.com {
+	encode zstd gzip
+	reverse_proxy auth:8000
+}
+
+# 演示小站（以后你的真实小站照此模式加一条）
+game1.example.com {
+	encode zstd gzip
+	reverse_proxy demo-app:8001
+}

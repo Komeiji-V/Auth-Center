@@ -1,0 +1,430 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>管理后台</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: system-ui, sans-serif; background: #f5f6f8; color: #222; }
+  .wrap { max-width: 980px; margin: 40px auto; padding: 0 16px; }
+  .card { background: #fff; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,.08); padding: 24px; margin-bottom: 20px; }
+  h1 { font-size: 20px; margin-bottom: 16px; }
+  h2 { font-size: 15px; margin-bottom: 12px; }
+  label { font-size: 13px; color: #666; display: block; margin: 10px 0 4px; }
+  input, select { padding: 8px 10px; border: 1px solid #ddd; border-radius: 8px; font-size: 14px; }
+  button { padding: 7px 14px; border: none; border-radius: 8px; font-size: 13px; cursor: pointer; background: #4a7cff; color: #fff; margin: 3px; }
+  button:hover { background: #3a66d8; }
+  button:disabled { background: #a8bdf5; cursor: not-allowed; }
+  .danger { background: #e05252; } .danger:hover { background: #c23f3f; }
+  .green { background: #2a8a3f; } .green:hover { background: #227234; }
+  .gray { background: #888; } .gray:hover { background: #6f6f6f; }
+  .orange { background: #d98324; } .orange:hover { background: #b86f1c; }
+  .msg { margin: 10px 0; font-size: 13px; }
+  .err { color: #d33; } .ok { color: #2a8a3f; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 10px; }
+  th, td { text-align: left; padding: 8px; border-bottom: 1px solid #eee; word-break: break-all; vertical-align: top; }
+  th { color: #666; font-weight: 600; white-space: nowrap; }
+  .tabs { display: flex; gap: 4px; margin-bottom: 16px; }
+  .tab { padding: 8px 18px; border-radius: 8px 8px 0 0; background: #e4e7ec; color: #555; cursor: pointer; }
+  .tab.active { background: #fff; color: #222; font-weight: 600; }
+  .panel { display: none; } .panel.active { display: block; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 12px; }
+  .b-pending { background: #fff3cd; color: #8a6d1a; }
+  .b-active { background: #d4edda; color: #1e6f34; }
+  .b-banned { background: #f8d7da; color: #a13535; }
+  .owner { background: #cfe2ff; color: #084298; }
+  .admin { background: #d1e7ff; color: #0a58ca; }
+  .apply { color: #666; font-size: 12px; max-width: 220px; }
+  .mono { font-family: monospace; font-size: 12px; }
+  .code-list { max-height: 300px; overflow-y: auto; }
+  #loginCard { max-width: 420px; margin: 40px auto; }
+  #app { display: none; }
+  .modal-mask { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 100; align-items: center; justify-content: center; }
+  .modal-mask.show { display: flex; }
+  .modal { background: #fff; border-radius: 12px; padding: 24px; width: 360px; box-shadow: 0 8px 30px rgba(0,0,0,.2); }
+  .modal h2 { font-size: 16px; margin-bottom: 14px; }
+  .modal label { font-size: 13px; color: #666; display: block; margin: 10px 0 4px; }
+  .modal input { width: 100%; padding: 8px 10px; border: 1px solid #ddd; border-radius: 8px; font-size: 14px; }
+  .modal .row { text-align: right; margin-top: 16px; }
+  .modal .row button { margin: 0 4px; }
+</style>
+</head>
+<body>
+
+<div id="loginCard" class="card">
+  <h1>管理后台登录</h1>
+  <label>用户名 / 邮箱</label>
+  <input id="account" style="width:100%;" autocomplete="username">
+  <label>密码</label>
+  <input id="password" type="password" style="width:100%;" autocomplete="current-password">
+  <div id="totpRow">
+    <label>TOTP 验证码（必填）</label>
+    <input id="totp" inputmode="numeric" style="width:100%;" placeholder="6 位数字">
+  </div>
+  <br><button id="loginBtn" style="width:100%; margin-top:14px;">登录</button>
+  <div class="msg" id="loginMsg"></div>
+</div>
+
+<div id="app">
+  <h1>管理后台</h1>
+  <div class="msg" id="userInfo"></div>
+  <div class="tabs">
+    <div class="tab active" data-panel="users">用户管理</div>
+    <div class="tab" data-panel="invites">邀请码</div>
+    <div class="tab" data-panel="settings">注册模式</div>
+  </div>
+
+  <div class="card">
+    <div id="panel-users" class="panel active">
+      <h2>用户列表</h2>
+      <select id="statusFilter">
+        <option value="pending">待审核</option>
+        <option value="active">已通过</option>
+        <option value="banned">已封禁</option>
+        <option value="all">全部</option>
+      </select>
+      <button id="refreshUsers">刷新</button>
+      <table>
+        <thead><tr>
+          <th>ID</th><th>用户名</th><th>邮箱</th><th>状态</th><th>申请说明</th><th>注册时间</th><th>操作</th>
+        </tr></thead>
+        <tbody id="userRows"></tbody>
+      </table>
+    </div>
+
+    <div id="panel-invites" class="panel">
+      <h2>生成邀请码</h2>
+      <label>数量</label>
+      <input id="inviteCount" type="number" value="1" min="1" max="100" style="width:80px;">
+      <label>可用次数（每码 0 = 不限次）</label>
+      <input id="inviteMaxUses" type="number" value="1" min="0" style="width:80px;">
+      <label>有效天数（留空 = 永久）</label>
+      <input id="inviteDays" type="number" min="1" style="width:80px;" placeholder="永久">
+      <label>备注（可选）</label>
+      <input id="inviteNote" style="width:260px;" placeholder="发给谁/用途">
+      <br><button id="genInvites">生成</button>
+      <button id="refreshInvites" class="gray">刷新列表</button>
+      <div class="code-list"><table>
+        <thead><tr><th>邀请码</th><th>备注</th><th>使用状态</th><th>过期时间</th><th>创建时间</th></tr></thead>
+        <tbody id="inviteRows"></tbody>
+      </table></div>
+    </div>
+
+    <div id="panel-settings" class="panel">
+      <h2>注册模式（三个独立开关，可任意组合，立即生效）</h2>
+      <label><input type="checkbox" id="swInvite"> 邀请码注册：必须有有效邀请码才能注册</label>
+      <label><input type="checkbox" id="swEmail"> 邮箱验证：注册需邮箱验证码（推荐开启，防机器人）</label>
+      <label><input type="checkbox" id="swReview"> 人工审核：注册后需管理员通过才能登录</label>
+      <br><button id="saveMode">保存模式</button>
+      <div class="msg" id="modeMsg"></div>
+    </div>
+  </div>
+</div>
+
+<div class="modal-mask" id="editModal">
+  <div class="modal">
+    <h2>编辑用户</h2>
+    <label>用户名</label>
+    <input id="editUsername" maxlength="20">
+    <label>邮箱</label>
+    <input id="editEmail" type="email">
+    <div class="row">
+      <button class="gray" id="editCancel">取消</button>
+      <button id="editSave">保存</button>
+    </div>
+    <div class="msg" id="editMsg"></div>
+  </div>
+</div>
+
+<script>
+const q = new URLSearchParams(location.search);
+let token = sessionStorage.getItem('admin_token') || '';
+let refreshToken = sessionStorage.getItem('admin_refresh') || '';
+let currentUser = null;
+let refreshing = false;
+
+function api(path, options = {}) {
+  const headers = { 'Content-Type': 'application/json' };
+  if (token) headers['Authorization'] = 'Bearer ' + token;
+  return fetch(path, { ...options, headers }).then(async (r) => {
+    const data = await r.json().catch(() => ({}));
+    if (r.status === 401 && refreshToken) {
+      const ok = await tryRefresh();
+      if (ok) return api(path, options);
+    }
+    return { status: r.status, data };
+  });
+}
+
+async function tryRefresh() {
+  if (refreshing) return false;
+  refreshing = true;
+  try {
+    const r = await fetch('/api/refresh', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ refresh_token: refreshToken }),
+    });
+    const d = await r.json();
+    if (r.ok && d.token) {
+      token = d.token;
+      refreshToken = d.refresh_token;
+      sessionStorage.setItem('admin_token', token);
+      sessionStorage.setItem('admin_refresh', refreshToken);
+      return true;
+    }
+    sessionStorage.removeItem('admin_token');
+    sessionStorage.removeItem('admin_refresh');
+    token = '';
+    refreshToken = '';
+    return false;
+  } catch {
+    return false;
+  } finally {
+    refreshing = false;
+  }
+}
+
+function msg(id, text, cls) {
+  const el = document.getElementById(id);
+  if (el) { el.textContent = text; el.className = 'msg ' + (cls || 'err'); }
+}
+
+document.getElementById('loginBtn').addEventListener('click', async () => {
+  const body = { account: document.getElementById('account').value.trim(), password: document.getElementById('password').value };
+  const t = document.getElementById('totp').value.trim();
+  if (t) body.totp_code = t;
+  const { status, data } = await api('/api/login', { method: 'POST', body: JSON.stringify(body) });
+  if (status !== 200) {
+    return msg('loginMsg', data.error || '登录失败');
+  }
+  if (data.user.role !== 'admin') return msg('loginMsg', '该账号不是管理员');
+  token = data.token;
+  refreshToken = data.refresh_token;
+  currentUser = data.user;
+  sessionStorage.setItem('admin_token', token);
+  sessionStorage.setItem('admin_refresh', refreshToken);
+  localStorage.setItem('auth_access_token', token);
+  if (data.need_totp_setup) {
+    location.href = '/totp?redirect=' + encodeURIComponent(location.origin + '/admin');
+    return;
+  }
+  enterApp();
+});
+
+function enterApp() {
+  document.getElementById('loginCard').style.display = 'none';
+  document.getElementById('app').style.display = 'block';
+  document.getElementById('userInfo').innerHTML =
+    '当前管理员：<b>' + (currentUser ? currentUser.username : '') + '</b>｜' +
+    '<a href="/profile" style="color:#4a7cff;">个人中心</a>　' +
+    '<button class="gray" onclick="logout()">退出</button>';
+  loadUsers();
+  loadMode();
+  loadInvites();
+}
+
+function logout() {
+  sessionStorage.removeItem('admin_token');
+  sessionStorage.removeItem('admin_refresh');
+  localStorage.removeItem('auth_access_token');
+  localStorage.removeItem('auth_refresh_token');
+  location.href = '/login';
+}
+
+// ---------- 用户管理 ----------
+let currentUserList = [];
+
+async function loadUsers() {
+  const status = document.getElementById('statusFilter').value;
+  const { status: s, data } = await api('/api/admin/users?status=' + status);
+  if (s !== 200) return;
+  currentUserList = data.users;
+  const tbody = document.getElementById('userRows');
+  tbody.innerHTML = '';
+  const badges = { pending: 'b-pending', active: 'b-active', banned: 'b-banned' };
+  const isOwner = !!(currentUser && currentUser.is_owner);
+  for (const u of data.users) {
+    const tr = document.createElement('tr');
+    const ownerBadge = u.is_owner ? ' <span class="badge owner">owner</span>' : '';
+    const adminBadge = u.role === 'admin' ? ' <span class="badge admin">admin</span>' : '';
+    const canManagePrivileged = isOwner || !(u.role === 'admin' || u.is_owner);
+    const ops = [];
+    if (u.status === 'pending') {
+      ops.push('<button class="green" onclick="doAction(' + u.id + ',\'approve\')">通过</button>');
+      ops.push('<button class="danger" onclick="doAction(' + u.id + ',\'reject\')">拒绝</button>');
+    }
+    if (u.status === 'active' && canManagePrivileged) {
+      ops.push('<button class="danger" onclick="doAction(' + u.id + ',\'ban\')">封禁</button>');
+    }
+    if (u.status === 'banned' && canManagePrivileged) {
+      ops.push('<button class="green" onclick="doAction(' + u.id + ',\'unban\')">解封</button>');
+    }
+    if (u.status !== 'pending' && canManagePrivileged) {
+      ops.push('<button class="orange" onclick="doAction(' + u.id + ',\'unlock\')">解锁</button>');
+    }
+    if (u.status === 'active' && !u.is_owner && isOwner) {
+      ops.push('<button class="gray" onclick="doAction(' + u.id + ',\'set-admin\',{\'is_admin\':' + (u.role !== 'admin') + '})">' +
+        (u.role === 'admin' ? '取消管理员' : '设为管理员') + '</button>');
+    }
+    if (u.status === 'active' && canManagePrivileged) {
+      ops.push('<button class="gray" onclick="editUser(' + u.id + ')">编辑</button>');
+    }
+    tr.innerHTML =
+      '<td>' + u.id + '</td>' +
+      '<td>' + u.username + ownerBadge + adminBadge + '</td>' +
+      '<td>' + u.email + '</td>' +
+      '<td><span class="badge ' + (badges[u.status] || '') + '">' + u.status + '</span></td>' +
+      '<td class="apply">' + (u.apply_info || '') + '</td>' +
+      '<td class="mono">' + (u.created_at || '').slice(0, 19).replace('T', ' ') + '</td>' +
+      '<td>' + ops.join('') + '</td>';
+    tbody.appendChild(tr);
+  }
+}
+
+async function doAction(id, action, extra) {
+  if (action === 'ban' && !confirm('确认封禁该用户？')) return;
+  if (action === 'reject' && !confirm('确认拒绝该申请？将删除其注册记录，用户可重新注册。')) return;
+  if (action === 'set-admin' && extra && extra.is_admin && !confirm('确认将该用户设为管理员？')) return;
+  const body = extra ? JSON.stringify(extra) : '{}';
+  const { status, data } = await api('/api/admin/users/' + id + '/' + action, { method: 'POST', body });
+  if (status !== 200) return alert(data.error || '操作失败');
+  loadUsers();
+}
+
+// ---------- 编辑用户（模态框）----------
+let editingUserId = null;
+
+function editUser(id) {
+  const u = currentUserList.find((x) => x.id === id);
+  if (!u) return;
+  editingUserId = id;
+  document.getElementById('editUsername').value = u.username;
+  document.getElementById('editEmail').value = u.email;
+  const m = document.getElementById('editMsg');
+  m.textContent = '';
+  m.className = 'msg';
+  document.getElementById('editModal').classList.add('show');
+}
+
+document.getElementById('editSave').addEventListener('click', async () => {
+  const username = document.getElementById('editUsername').value.trim();
+  const email = document.getElementById('editEmail').value.trim();
+  const { status, data } = await api('/api/admin/users/' + editingUserId + '/edit', {
+    method: 'POST',
+    body: JSON.stringify({ username, email }),
+  });
+  if (status !== 200) {
+    const m = document.getElementById('editMsg');
+    m.textContent = data.error || '编辑失败';
+    m.className = 'msg err';
+    return;
+  }
+  document.getElementById('editModal').classList.remove('show');
+  loadUsers();
+});
+
+document.getElementById('editCancel').addEventListener('click', () => {
+  document.getElementById('editModal').classList.remove('show');
+});
+
+document.getElementById('statusFilter').addEventListener('change', loadUsers);
+document.getElementById('refreshUsers').addEventListener('click', loadUsers);
+
+// ---------- 邀请码 ----------
+document.getElementById('genInvites').addEventListener('click', async () => {
+  const count = parseInt(document.getElementById('inviteCount').value, 10) || 1;
+  const maxUses = parseInt(document.getElementById('inviteMaxUses').value, 10);
+  const expiresDays = parseInt(document.getElementById('inviteDays').value, 10);
+  const note = document.getElementById('inviteNote').value.trim();
+  const body = { count, note };
+  if (Number.isInteger(maxUses) && maxUses >= 0) body.max_uses = maxUses;
+  if (Number.isInteger(expiresDays) && expiresDays > 0) body.expires_days = expiresDays;
+  const { status, data } = await api('/api/admin/invite-codes', { method: 'POST', body: JSON.stringify(body) });
+  if (status !== 200) return alert(data.error || '生成失败');
+  alert('已生成 ' + data.codes.length + ' 个邀请码：\n' + data.codes.join('\n'));
+  loadInvites();
+});
+
+async function loadInvites() {
+  const { status, data } = await api('/api/admin/invite-codes');
+  if (status !== 200) return;
+  const tbody = document.getElementById('inviteRows');
+  tbody.innerHTML = '';
+  for (const c of data.codes) {
+    const tr = document.createElement('tr');
+    const unlimited = c.max_uses === 0;
+    const usedText = (unlimited ? '已用 ' + c.used_count + ' 次（不限）' : c.used_count + ' / ' + c.max_uses + ' 次');
+    const expired = c.expires_at && new Date(c.expires_at) < new Date();
+    let statusHtml;
+    if (expired) statusHtml = '<span class="badge b-banned">已过期</span>';
+    else if (!unlimited && c.used_count >= c.max_uses) statusHtml = '<span class="badge b-banned">已用尽</span>';
+    else statusHtml = '<span class="badge b-pending">可用（' + usedText + '）</span>';
+    tr.innerHTML = '<td class="mono">' + c.code + '</td><td>' + (c.note || '') + '</td><td>' + statusHtml +
+      (c.used_by ? '（' + c.used_by + '）' : '') +
+      '</td><td class="mono">' + (c.expires_at ? (c.expires_at.slice(0, 19).replace('T', ' ')) : '永久') +
+      '</td><td class="mono">' + (c.created_at || '').slice(0, 19).replace('T', ' ') + '</td>';
+    tbody.appendChild(tr);
+  }
+}
+
+document.getElementById('refreshInvites').addEventListener('click', loadInvites);
+
+// ---------- 模式开关 ----------
+async function loadMode() {
+  const { data } = await api('/api/config');
+  const f = data.flags || {};
+  document.getElementById('swInvite').checked = !!f.invite_required;
+  document.getElementById('swEmail').checked = f.email_verify_required !== false;
+  document.getElementById('swReview').checked = !!f.review_required;
+}
+
+document.getElementById('saveMode').addEventListener('click', async () => {
+  const body = JSON.stringify({
+    invite_required: document.getElementById('swInvite').checked,
+    email_verify_required: document.getElementById('swEmail').checked,
+    review_required: document.getElementById('swReview').checked,
+  });
+  const { status, data } = await api('/api/admin/config', { method: 'POST', body });
+  msg('modeMsg', status === 200 ? '已保存' : data.error, status === 200 ? 'ok' : 'err');
+});
+
+// ---------- Tab 切换 ----------
+document.querySelectorAll('.tab').forEach((tab) => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach((t) => t.classList.remove('active'));
+    document.querySelectorAll('.panel').forEach((p) => p.classList.remove('active'));
+    tab.classList.add('active');
+    document.getElementById('panel-' + tab.dataset.panel).classList.add('active');
+  });
+});
+
+// ---------- 初始化：兼容登录页存储的 token（避免重输密码）----------
+async function initFromStorage() {
+  let t = sessionStorage.getItem('admin_token') || localStorage.getItem('auth_access_token') || '';
+  if (!t) return;
+  token = t;
+  const r = await fetch('/api/userinfo', { headers: { Authorization: 'Bearer ' + token } });
+  const d = await r.json().catch(() => ({}));
+  if (r.ok && d.role === 'admin') {
+    currentUser = d;
+    if (q.get('setup') === '1') {
+      location.replace('/totp?redirect=' + encodeURIComponent(location.origin + '/admin'));
+      return;
+    }
+    if (!d.totp_enabled) {
+      location.replace('/totp?redirect=' + encodeURIComponent(location.origin + '/admin'));
+      return;
+    }
+    enterApp();
+  } else {
+    localStorage.removeItem('auth_access_token');
+    token = '';
+  }
+}
+
+initFromStorage();
+</script>
+</body>
+</html>
