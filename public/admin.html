@@ -40,9 +40,12 @@
   .filter-bar { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
   .filter-bar select { margin: 0; }
   .filter-bar button { margin: 0; }
-  .tabs { display: flex; gap: 4px; margin-bottom: 16px; }
-  .tab { padding: 8px 18px; border-radius: 8px 8px 0 0; background: #e4e7ec; color: #555; cursor: pointer; }
-  .tab.active { background: #fff; color: #222; font-weight: 600; }
+  .tabs { display: flex; gap: 4px; padding: 10px 16px 0; border-bottom: 1px solid #eee; }
+  .tab { padding: 10px 18px; border-radius: 8px 8px 0 0; background: transparent; color: #555; cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px; transition: color .15s ease; }
+  .tab:hover { color: #4a7cff; }
+  .tab.active { background: transparent; color: #4a7cff; font-weight: 600; border-bottom-color: #4a7cff; }
+  .tabbed-card { padding: 0; overflow: hidden; }
+  .tabbed-card .panel { padding: 16px 20px; }
   .panel { display: none; } .panel.active { display: block; }
   .badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 12px; }
   .b-pending { background: #fff3cd; color: #8a6d1a; }
@@ -84,13 +87,12 @@
 <div id="app">
   <h1>管理后台</h1>
   <div class="msg" id="userInfo"></div>
-  <div class="tabs">
-    <div class="tab active" data-panel="users">用户管理</div>
-    <div class="tab" data-panel="invites">邀请码</div>
-    <div class="tab" data-panel="settings">注册模式</div>
-  </div>
-
-  <div class="card">
+  <div class="card tabbed-card">
+    <div class="tabs">
+      <div class="tab active" data-panel="users">用户管理</div>
+      <div class="tab" data-panel="invites">邀请码</div>
+      <div class="tab" data-panel="settings">注册模式</div>
+    </div>
     <div id="panel-users" class="panel active">
       <h2>用户列表</h2>
       <div class="filter-bar">
@@ -237,7 +239,7 @@ function enterApp() {
   document.getElementById('loginCard').style.display = 'none';
   document.getElementById('app').style.display = 'block';
   document.getElementById('userInfo').innerHTML =
-    '当前管理员：<b>' + (currentUser ? currentUser.username : '') + '</b>｜' +
+    '<b>' + (currentUser ? currentUser.username : '') + '</b>　' +
     '<a href="/profile" style="color:#4a7cff;">个人中心</a>　' +
     '<button class="gray" onclick="logout()">退出</button>';
   loadUsers();
