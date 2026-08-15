@@ -49,51 +49,6 @@
   .code-list { max-height: 300px; overflow-y: auto; }
   #loginCard { max-width: 420px; margin: 40px auto; }
   #app { display: none; }
-  .layout {
-    display: flex;
-    gap: 20px;
-    max-width: 1100px;
-    margin: 32px auto;
-    padding: 0 20px;
-    align-items: flex-start;
-  }
-  .sidebar {
-    width: 200px;
-    flex-shrink: 0;
-    position: sticky;
-    top: 20px;
-  }
-  .sidebar-title {
-    font-size: 22px;
-    font-weight: 700;
-    color: #7c3aed;
-    padding: 6px 16px 14px;
-    letter-spacing: 1px;
-  }
-  .sidebar-nav {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-  }
-  .nav-item {
-    padding: 11px 16px;
-    border-radius: 10px;
-    cursor: pointer;
-    font-size: 14px;
-    color: #555;
-    background: transparent;
-    border: 1px solid transparent;
-    transition: all .15s ease;
-    user-select: none;
-  }
-  .nav-item:hover { background: #eef1f8; color: #333; }
-  .nav-item.active {
-    background: linear-gradient(135deg, #7c3aed, #a855f7);
-    color: #fff;
-    box-shadow: 0 4px 14px rgba(124, 58, 237, .35);
-    font-weight: 600;
-  }
-  .content { flex: 1; min-width: 0; }
   .modal-mask { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 100; align-items: center; justify-content: center; }
   .modal-mask.show { display: flex; }
   .modal { background: #fff; border-radius: 12px; padding: 24px; width: 360px; box-shadow: 0 8px 30px rgba(0,0,0,.2); }
@@ -121,18 +76,15 @@
 </div>
 
 <div id="app">
-  <div class="layout">
-    <aside class="sidebar">
-      <div class="sidebar-title">后台管理</div>
-      <nav class="sidebar-nav">
-        <div class="nav-item active" data-panel="users">用户管理</div>
-        <div class="nav-item" data-panel="invites">邀请码</div>
-        <div class="nav-item" data-panel="settings">注册模式</div>
-      </nav>
-    </aside>
-    <main class="content">
-      <div class="msg" id="userInfo"></div>
-      <div class="card">
+  <h1>管理后台</h1>
+  <div class="msg" id="userInfo"></div>
+  <div class="tabs">
+    <div class="tab active" data-panel="users">用户管理</div>
+    <div class="tab" data-panel="invites">邀请码</div>
+    <div class="tab" data-panel="settings">注册模式</div>
+  </div>
+
+  <div class="card">
     <div id="panel-users" class="panel active">
       <h2>用户列表</h2>
       <div class="filter-bar">
@@ -178,8 +130,6 @@
       <br><button id="saveMode">保存模式</button>
       <div class="msg" id="modeMsg"></div>
     </div>
-      </div>
-    </main>
   </div>
 </div>
 
@@ -279,7 +229,7 @@ function enterApp() {
   document.getElementById('loginCard').style.display = 'none';
   document.getElementById('app').style.display = 'block';
   document.getElementById('userInfo').innerHTML =
-    '<b>' + (currentUser ? currentUser.username : '') + '</b>　' +
+    '当前管理员：<b>' + (currentUser ? currentUser.username : '') + '</b>｜' +
     '<a href="/profile" style="color:#4a7cff;">个人中心</a>　' +
     '<button class="gray" onclick="logout()">退出</button>';
   loadUsers();
@@ -453,13 +403,13 @@ document.getElementById('saveMode').addEventListener('click', async () => {
   msg('modeMsg', status === 200 ? '已保存' : data.error, status === 200 ? 'ok' : 'err');
 });
 
-// ---------- 侧边栏导航切换 ----------
-document.querySelectorAll('.nav-item').forEach((item) => {
-  item.addEventListener('click', () => {
-    document.querySelectorAll('.nav-item').forEach((i) => i.classList.remove('active'));
+// ---------- Tab 切换 ----------
+document.querySelectorAll('.tab').forEach((tab) => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach((t) => t.classList.remove('active'));
     document.querySelectorAll('.panel').forEach((p) => p.classList.remove('active'));
-    item.classList.add('active');
-    document.getElementById('panel-' + item.dataset.panel).classList.add('active');
+    tab.classList.add('active');
+    document.getElementById('panel-' + tab.dataset.panel).classList.add('active');
   });
 });
 
