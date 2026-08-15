@@ -5,7 +5,12 @@
     .then((d) => {
       const site = d.site || {};
       window.SITE = site;
-      if (site.site_title) document.title = site.site_title;
+      if (site.site_title) {
+        document.title = site.site_title;
+        document.querySelectorAll('[data-site-title]').forEach((el) => {
+          el.textContent = site.site_title;
+        });
+      }
       if (site.site_icon) {
         let link = document.querySelector('link[rel="icon"]');
         if (!link) {

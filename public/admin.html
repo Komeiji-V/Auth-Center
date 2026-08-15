@@ -20,7 +20,7 @@
   .green { background: #2a8a3f; } .green:hover { background: #227234; }
   .gray { background: #888; } .gray:hover { background: #6f6f6f; }
   .orange { background: #d98324; } .orange:hover { background: #b86f1c; }
-  .teal { background: linear-gradient(135deg, #0d9488, #14b8a6); } .teal:hover { filter: brightness(1.1); }
+  .teal { background: linear-gradient(135deg, #0d9488, #14b8a6); } .teal:hover { filter: brightness(0.92); }
   .msg { margin: 10px 0; font-size: 13px; }
   .err { color: #d33; } .ok { color: #2a8a3f; }
   table { width: 100%; table-layout: fixed; min-width: 1300px; border-collapse: collapse; font-size: 13px; }
@@ -53,9 +53,12 @@
   .tab.active { background: transparent; color: #4a7cff; font-weight: 600; border-bottom-color: #4a7cff; }
   .tabbed-card { padding: 0; overflow: hidden; }
   .tabbed-card .panel { padding: 16px 20px; }
-  .invite-row { display: flex; gap: 18px; align-items: flex-end; flex-wrap: wrap; margin-bottom: 4px; }
-  .invite-field { display: flex; flex-direction: column; }
+  .invite-row { display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap; margin-bottom: 4px; }
+  .invite-field { display: flex; flex-direction: column; flex: 1; max-width: 170px; }
+  .invite-field input { width: 100%; }
   .invite-field label { margin: 0 0 4px; }
+  .copy-btn { padding: 2px 8px; font-size: 12px; background: #e8ecf5; color: #3a5fc8; margin: 0 0 0 6px; border-radius: 6px; }
+  .copy-btn:hover { background: #4a7cff; color: #fff; }
   .panel { display: none; } .panel.active { display: block; }
   .badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 12px; }
   .b-pending { background: #fff3cd; color: #8a6d1a; }
@@ -537,12 +540,23 @@ async function loadInvites() {
     if (expired) statusHtml = '<span class="badge b-banned">已过期</span>';
     else if (!unlimited && c.used_count >= c.max_uses) statusHtml = '<span class="badge b-banned">已用尽</span>';
     else statusHtml = '<span class="badge b-pending">可用（' + usedText + '）</span>';
-    tr.innerHTML = '<td class="mono">' + c.code + '</td><td>' + (c.note || '') + '</td><td>' + statusHtml +
+    tr.innerHTML = '<td class="mono">' + c.code + '<button class="copy-btn" onclick="copyInvite(\'' + c.code + '\', this)">复制</button></td><td>' + (c.note || '') + '</td><td>' + statusHtml +
       (c.used_by ? '（' + c.used_by + '）' : '') +
       '</td><td class="mono">' + (c.expires_at ? (c.expires_at.slice(0, 19).replace('T', ' ')) : '永久') +
       '</td><td class="mono">' + (c.created_at || '').slice(0, 19).replace('T', ' ') + '</td>';
     tbody.appendChild(tr);
   }
+}
+
+function copyInvite(code, btn) {
+  navigator.clipboard.writeText(code).then(() => {
+    const old = btn.textContent;
+    btn.textContent = '已复制';
+    setTimeout(() => { btn.textContent = old; }, 1500);
+  }).catch(() => {
+    btn.textContent = '复制失败';
+    setTimeout(() => { btn.textContent = '复制'; }, 1500);
+  });
 }
 
 document.getElementById('refreshInvites').addEventListener('click', loadInvites);
