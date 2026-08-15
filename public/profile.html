@@ -6,8 +6,28 @@
 <title>个人中心</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: system-ui, sans-serif; background: #f5f6f8; color: #222; display: flex; align-items: flex-start; justify-content: center; min-height: 100vh; padding: 40px 16px; }
-  .card { background: #fff; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,.08); padding: 28px; width: 420px; margin-bottom: 16px; }
+  body { font-family: system-ui, sans-serif; background: #f5f6f8; color: #222; min-height: 100vh; }
+  .wrap {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16px;
+    justify-content: center;
+    align-items: flex-start;
+    max-width: 980px;
+    margin: 32px auto;
+    padding: 0 16px;
+  }
+  .card {
+    background: #fff; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,.08); padding: 24px;
+    flex: 0 1 calc(50% - 8px);
+    min-width: 0;
+  }
+  #loginNeeded { display: none; flex: 0 1 100%; max-width: 420px; margin: 0 auto; text-align: center; padding: 60px 24px; }
+  .main-grid { display: none; }
+  .main-grid.show { display: flex; flex-wrap: wrap; gap: 16px; }
+  @media (max-width: 620px) {
+    .card, .main-grid .card { flex: 0 1 100%; }
+  }
   h1 { font-size: 20px; margin-bottom: 16px; }
   h2 { font-size: 14px; color: #666; margin: 18px 0 8px; }
   label { display: block; font-size: 13px; color: #666; margin: 12px 0 4px; }
@@ -24,18 +44,17 @@
   .info { font-size: 13px; color: #444; line-height: 1.8; }
   .link { font-size: 13px; margin-top: 14px; }
   .link a { color: #4a7cff; text-decoration: none; }
-  #loginNeeded { display: none; text-align: center; padding: 60px 0; }
 </style>
 </head>
 <body>
-<div class="wrap" style="width:420px;">
+<div class="wrap">
   <div class="card" id="loginNeeded">
     <h1>需要登录</h1>
     <p style="font-size:14px; color:#666; margin-bottom:16px;">请先登录认证中心后再访问个人中心。</p>
     <button id="goLogin">去登录</button>
   </div>
 
-  <div id="main" style="display:none;">
+  <div id="main" class="main-grid">
     <div class="card">
       <h1>个人中心</h1>
       <div class="info" id="userInfo"></div>
@@ -161,7 +180,7 @@ async function init() {
     return showLoginNeeded();
   }
   user = data;
-  document.getElementById('main').style.display = 'block';
+  document.getElementById('main').classList.add('show');
   document.getElementById('userInfo').innerHTML =
     '用户名：<b>' + user.username + '</b><br>邮箱：' + user.email + '<br>角色：' + (user.role === 'admin' ? '管理员' : '普通用户');
   if (user.role === 'admin') document.getElementById('adminLink').style.display = 'inline';
@@ -170,7 +189,7 @@ async function init() {
 
 function showLoginNeeded() {
   document.getElementById('loginNeeded').style.display = 'block';
-  document.getElementById('main').style.display = 'none';
+  document.getElementById('main').classList.remove('show');
 }
 
 document.getElementById('goLogin').addEventListener('click', () => {
