@@ -18,7 +18,7 @@ const REG_CODE_PER_HOUR = parseInt(process.env.REG_CODE_PER_HOUR, 10) || 3;
 const PROFILE_CODE_PER_HOUR = parseInt(process.env.PROFILE_CODE_PER_HOUR, 10) || 5;
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const USERNAME_RE = /^[a-zA-Z0-9_]{3,20}$/;
+const USERNAME_RE = /^[\u4e00-\u9fa5a-zA-Z0-9_]{2,20}$/;
 
 function hashPassword(password) {
   const salt = crypto.randomBytes(16);
@@ -120,7 +120,7 @@ router.post('/register', async (req, res) => {
     const ip = req.ip;
 
     if (!username || !USERNAME_RE.test(username)) {
-      return res.status(400).json({ error: '用户名需为 3-20 位字母、数字或下划线' });
+      return res.status(400).json({ error: '用户名需为 2-20 位中文、字母、数字或下划线' });
     }
     if (!email || !EMAIL_RE.test(email)) {
       return res.status(400).json({ error: '邮箱格式不正确' });
@@ -431,7 +431,7 @@ router.post('/profile/username', profileAuth, async (req, res) => {
   try {
     const { username } = req.body || {};
     if (!username || !USERNAME_RE.test(username)) {
-      return res.status(400).json({ error: '用户名需为 3-20 位字母、数字或下划线' });
+      return res.status(400).json({ error: '用户名需为 2-20 位中文、字母、数字或下划线' });
     }
     const { rows: dup } = await db.query(
       'SELECT id FROM users WHERE LOWER(username) = $1 AND id <> $2',

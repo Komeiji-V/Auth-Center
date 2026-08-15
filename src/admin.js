@@ -241,7 +241,7 @@ router.post('/users/:id/edit', ...adminGuard, async (req, res) => {
     let newUsername = u.username;
     let newEmail = u.email;
     if (username !== undefined && username !== '') {
-      if (!USERNAME_RE.test(username)) return res.status(400).json({ error: '用户名需为 3-20 位字母、数字或下划线' });
+      if (!USERNAME_RE.test(username)) return res.status(400).json({ error: '用户名需为 2-20 位中文、字母、数字或下划线' });
       const { rows: dup } = await db.query(
         'SELECT id FROM users WHERE LOWER(username) = $1 AND id <> $2',
         [username.trim().toLowerCase(), id]
