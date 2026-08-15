@@ -252,9 +252,10 @@ router.post('/users/:id/edit', ...adminGuard, async (req, res) => {
   }
 });
 
-// ---- 注册模式开关（三个独立开关）----
+// ---- 注册模式开关（三个独立开关；仅 owner）----
 router.post('/config', ...adminGuard, async (req, res) => {
   try {
+    if (!req.user.is_owner) return res.status(403).json({ error: '仅初始管理员（owner）可修改注册模式' });
     const { invite_required, email_verify_required, review_required } = req.body || {};
     const next = {
       invite_required: invite_required ? 'true' : 'false',
@@ -272,9 +273,10 @@ router.post('/config', ...adminGuard, async (req, res) => {
   }
 });
 
-// ---- 生成邀请码（支持使用次数/过期时间）----
+// ---- 生成邀请码（支持使用次数/过期时间；仅 owner）----
 router.post('/invite-codes', ...adminGuard, async (req, res) => {
   try {
+    if (!req.user.is_owner) return res.status(403).json({ error: '仅初始管理员（owner）可生成邀请码' });
     const count = Math.min(Math.max(parseInt((req.body || {}).count, 10) || 1, 1), 100);
     const note = (req.body || {}).note || null;
     const maxUsesRaw = parseInt((req.body || {}).max_uses, 10);

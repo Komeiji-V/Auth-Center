@@ -46,6 +46,9 @@
   .tab.active { background: transparent; color: #4a7cff; font-weight: 600; border-bottom-color: #4a7cff; }
   .tabbed-card { padding: 0; overflow: hidden; }
   .tabbed-card .panel { padding: 16px 20px; }
+  .invite-row { display: flex; gap: 18px; align-items: flex-end; flex-wrap: wrap; margin-bottom: 4px; }
+  .invite-field { display: flex; flex-direction: column; }
+  .invite-field label { margin: 0 0 4px; }
   .panel { display: none; } .panel.active { display: block; }
   .badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 12px; }
   .b-pending { background: #fff3cd; color: #8a6d1a; }
@@ -116,12 +119,20 @@
 
     <div id="panel-invites" class="panel">
       <h2>生成邀请码</h2>
-      <label>数量</label>
-      <input id="inviteCount" type="number" value="1" min="1" max="100" style="width:80px;">
-      <label>可用次数（每码 0 = 不限次）</label>
-      <input id="inviteMaxUses" type="number" value="1" min="0" style="width:80px;">
-      <label>有效天数（留空 = 永久）</label>
-      <input id="inviteDays" type="number" min="1" style="width:80px;" placeholder="永久">
+      <div class="invite-row">
+        <div class="invite-field">
+          <label>数量</label>
+          <input id="inviteCount" type="number" value="1" min="1" max="100" style="width:80px;">
+        </div>
+        <div class="invite-field">
+          <label>可用次数（0 = 不限）</label>
+          <input id="inviteMaxUses" type="number" value="1" min="0" style="width:80px;">
+        </div>
+        <div class="invite-field">
+          <label>有效天数（留空永久）</label>
+          <input id="inviteDays" type="number" min="1" style="width:80px;" placeholder="永久">
+        </div>
+      </div>
       <label>备注（可选）</label>
       <input id="inviteNote" style="width:260px;" placeholder="发给谁/用途">
       <br><button id="genInvites">生成</button>
@@ -242,6 +253,14 @@ function enterApp() {
     '<b>' + (currentUser ? currentUser.username : '') + '</b>　' +
     '<a href="/profile" style="color:#4a7cff;">个人中心</a>　' +
     '<button class="gray" onclick="logout()">退出</button>';
+  // 非 owner：隐藏邀请码和注册模式（仅 owner 可修改）
+  if (currentUser && !currentUser.is_owner) {
+    document.querySelectorAll('.tab').forEach((t) => {
+      if (t.dataset.panel === 'invites' || t.dataset.panel === 'settings') {
+        t.style.display = 'none';
+      }
+    });
+  }
   loadUsers();
   loadMode();
   loadInvites();
