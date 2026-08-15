@@ -20,6 +20,7 @@
   .green { background: #2a8a3f; } .green:hover { background: #227234; }
   .gray { background: #888; } .gray:hover { background: #6f6f6f; }
   .orange { background: #d98324; } .orange:hover { background: #b86f1c; }
+  .teal { background: linear-gradient(135deg, #0d9488, #14b8a6); } .teal:hover { filter: brightness(1.1); }
   .msg { margin: 10px 0; font-size: 13px; }
   .err { color: #d33; } .ok { color: #2a8a3f; }
   table { width: 100%; table-layout: fixed; min-width: 1300px; border-collapse: collapse; font-size: 13px; }
@@ -118,6 +119,13 @@
   .modal input { width: 100%; padding: 8px 10px; border: 1px solid #ddd; border-radius: 8px; font-size: 14px; }
   .modal .row { text-align: right; margin-top: 16px; }
   .modal .row button { margin: 0 4px; }
+  .confirm-mask { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 110; align-items: center; justify-content: center; }
+  .confirm-mask.show { display: flex; }
+  .confirm-modal { background: #fff; border-radius: 12px; padding: 24px; width: 360px; box-shadow: 0 8px 30px rgba(0,0,0,.2); }
+  .confirm-modal h2 { font-size: 16px; margin-bottom: 10px; }
+  .confirm-modal p { font-size: 14px; color: #666; line-height: 1.6; margin-bottom: 18px; }
+  .confirm-modal .row { text-align: right; }
+  .confirm-modal .row button { margin: 0 4px; }
 </style>
 </head>
 <body>
@@ -219,6 +227,17 @@
       <button id="editSave">保存</button>
     </div>
     <div class="msg" id="editMsg"></div>
+  </div>
+</div>
+
+<div class="confirm-mask" id="confirmModal">
+  <div class="confirm-modal">
+    <h2 id="cfTitle">确认操作</h2>
+    <p id="cfMsg"></p>
+    <div class="row">
+      <button class="gray" id="cfCancel">取消</button>
+      <button id="cfOk">确认</button>
+    </div>
   </div>
 </div>
 
@@ -358,12 +377,12 @@ async function loadUsers() {
     if (u.status !== 'pending' && canManagePrivileged) {
       ops.push('<button class="orange" onclick="doAction(' + u.id + ',\'unlock\')">解锁</button>');
     }
-    if (u.status === 'active' && !u.is_owner && isOwner) {
-      ops.push('<button class="gray" onclick="doAction(' + u.id + ',\'set-admin\',{\'is_admin\':' + (u.role !== 'admin') + '})">' +
-        (u.role === 'admin' ? '取消管理员' : '设为管理员') + '</button>');
-    }
     if (u.status === 'active' && canManagePrivileged) {
-      ops.push('<button class="orange" onclick="doAction(' + u.id + ',\'reset-totp\')">重置 TOTP</button>');
+      ops.push('<button class="teal" onclick="doAction(' + u.id + ',\'reset-totp\')">重置 TOTP</button>');
+    }
+    if (u.status === 'active' && !u.is_owner && isOwner) {
+      ops.push('<button class="' + (u.role === 'admin' ? 'orange' : 'green') + '" onclick="doAction(' + u.id + ',\'set-admin\',{\'is_admin\':' + (u.role !== 'admin') + '})">' +
+        (u.role === 'admin' ? '取消管理员' : '设为管理员') + '</button>');
     }
     if (u.status === 'active' && canManagePrivileged) {
       ops.push('<button class="gray" onclick="editUser(' + u.id + ')">编辑</button>');
@@ -381,15 +400,62 @@ async function loadUsers() {
   }
 }
 
+// ---------- 通用确认弹窗 ----------
+let confirmCb = null;
+
+function showConfirm(opts) {
+  document.getElementById('cfTitle').textContent = opts.title || '确认操作';
+  document.getElementById('cfMsg').textContent = opts.message || '';
+  const ok = document.getElementById('cfOk');
+  ok.textContent = opts.confirmText || '确认';
+  ok.className = opts.danger ? 'danger' : '';
+  confirmCb = opts.onConfirm || null;
+  document.getElementById('confirmModal').classList.add('show');
+}
+
+function hideConfirm() {
+  document.getElementById('confirmModal').classList.remove('show');
+  confirmCb = null;
+}
+
+document.getElementById('cfOk').addEventListener('click', () => {
+  const cb = confirmCb;
+  hideConfirm();
+  if (cb) cb();
+});
+
+document.getElementById('cfCancel').addEventListener('click', hideConfirm);
+
 async function doAction(id, action, extra) {
-  if (action === 'ban' && !confirm('确认封禁该用户？')) return;
-  if (action === 'reject' && !confirm('确认拒绝该申请？将删除其注册记录，用户可重新注册。')) return;
-  if (action === 'reset-totp' && !confirm('确认重置该用户的 TOTP？用户需重新绑定。')) return;
-  if (action === 'set-admin' && extra && extra.is_admin && !confirm('确认将该用户设为管理员？')) return;
-  const body = extra ? JSON.stringify(extra) : '{}';
-  const { status, data } = await api('/api/admin/users/' + id + '/' + action, { method: 'POST', body });
-  if (status !== 200) return alert(data.error || '操作失败');
-  loadUsers();
+  const run = async () => {
+    const body = extra ? JSON.stringify(extra) : '{}';
+    const { status, data } = await api('/api/admin/users/' + id + '/' + action, { method: 'POST', body });
+    if (status !== 200) return alert(data.error || '操作失败');
+    loadUsers();
+  };
+  switch (action) {
+    case 'ban':
+      showConfirm({ title: '封禁用户', message: '确认封禁该用户？', confirmText: '封禁', danger: true, onConfirm: run });
+      break;
+    case 'reject':
+      showConfirm({ title: '拒绝申请', message: '确认拒绝该申请？将删除其注册记录，用户可重新注册。', confirmText: '拒绝', danger: true, onConfirm: run });
+      break;
+    case 'unlock':
+      showConfirm({ title: '解锁账号', message: '确认清除该用户的登录锁定？', confirmText: '解锁', onConfirm: run });
+      break;
+    case 'reset-totp':
+      showConfirm({ title: '重置 TOTP', message: '确认重置该用户的 TOTP？用户需重新绑定。', confirmText: '重置', onConfirm: run });
+      break;
+    case 'set-admin':
+      if (extra && extra.is_admin) {
+        showConfirm({ title: '设为管理员', message: '确认将该用户设为管理员？', confirmText: '设为管理员', onConfirm: run });
+      } else {
+        showConfirm({ title: '取消管理员', message: '确认取消该用户的管理员身份？', confirmText: '取消', danger: true, onConfirm: run });
+      }
+      break;
+    default:
+      run();
+  }
 }
 
 // ---------- 编辑用户（模态框）----------
