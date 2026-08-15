@@ -116,6 +116,11 @@
   .tab.active { color: #4a7cff; font-weight: 600; border-bottom-color: #4a7cff; }
   .card-user { display: flex; align-items: center; gap: 12px; }
   .user-name { font-size: 14px; font-weight: 600; color: #333; }
+  @media (max-width: 640px) {
+    .card-top { flex-wrap: wrap; }
+    .card-top-left { order: 2; width: 100%; gap: 18px; }
+    .card-user { order: 1; }
+  }
   .modal-mask { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 100; align-items: center; justify-content: center; }
   .modal-mask.show { display: flex; }
   .modal { background: #fff; border-radius: 12px; padding: 24px; width: 360px; box-shadow: 0 8px 30px rgba(0,0,0,.2); }
@@ -214,9 +219,9 @@
     </div>
 
     <div id="panel-settings" class="panel">
-      <h2>注册模式（三个独立开关，可任意组合，立即生效）</h2>
+      <h2>注册模式</h2>
       <label><input type="checkbox" id="swInvite"> 邀请码注册：必须有有效邀请码才能注册</label>
-      <label><input type="checkbox" id="swEmail"> 邮箱验证：注册需邮箱验证码（推荐开启，防机器人）</label>
+      <label><input type="checkbox" id="swEmail"> 邮箱验证：注册需邮箱验证码</label>
       <label><input type="checkbox" id="swReview"> 人工审核：注册后需管理员通过才能登录</label>
       <br><button id="saveMode">保存模式</button>
       <div class="msg" id="modeMsg"></div>
