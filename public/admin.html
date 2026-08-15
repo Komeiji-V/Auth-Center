@@ -67,18 +67,15 @@
   .code-list { max-height: 300px; overflow-y: auto; }
   #loginCard { max-width: 420px; margin: 40px auto; }
   #app { display: none; }
-  .app-header {
+  .card-top {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 16px;
-    background: #fff;
-    border-radius: 12px;
-    box-shadow: 0 4px 20px rgba(0, 0, 0, .08);
     padding: 14px 20px;
-    margin-bottom: 12px;
+    border-bottom: 1px solid #eee;
   }
-  .app-header-title {
+  .card-title {
     display: flex;
     align-items: center;
     gap: 10px;
@@ -93,19 +90,7 @@
     background: linear-gradient(135deg, #4a7cff, #3a66d8);
     display: inline-block;
   }
-  .app-header-user { display: flex; align-items: center; gap: 10px; }
-  .user-avatar {
-    width: 28px;
-    height: 28px;
-    border-radius: 50%;
-    background: linear-gradient(135deg, #4a7cff, #3a66d8);
-    color: #fff;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 13px;
-    font-weight: 600;
-  }
+  .card-user { display: flex; align-items: center; gap: 12px; }
   .user-name { font-size: 14px; font-weight: 600; color: #333; }
   .modal-mask { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 100; align-items: center; justify-content: center; }
   .modal-mask.show { display: flex; }
@@ -134,11 +119,11 @@
 </div>
 
 <div id="app">
-  <div class="app-header">
-    <div class="app-header-title"><span class="logo-dot"></span>管理后台</div>
-    <div class="app-header-user" id="userInfo"></div>
-  </div>
   <div class="card tabbed-card">
+    <div class="card-top">
+      <div class="card-title"><span class="logo-dot"></span>管理后台</div>
+      <div class="card-user" id="userInfo"></div>
+    </div>
     <div class="tabs">
       <div class="tab active" data-panel="users">用户管理</div>
       <div class="tab" data-panel="invites">邀请码</div>
@@ -298,7 +283,6 @@ function enterApp() {
   document.getElementById('loginCard').style.display = 'none';
   document.getElementById('app').style.display = 'block';
   document.getElementById('userInfo').innerHTML =
-    '<span class="user-avatar">' + (currentUser ? currentUser.username.charAt(0).toUpperCase() : '') + '</span>' +
     '<span class="user-name">' + (currentUser ? currentUser.username : '') + '</span>' +
     '<a href="/profile" style="color:#4a7cff; font-size:13px;">个人中心</a>' +
     '<button class="gray" onclick="logout()">退出</button>';
