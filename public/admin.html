@@ -22,7 +22,7 @@
   .orange { background: #d98324; } .orange:hover { background: #b86f1c; }
   .msg { margin: 10px 0; font-size: 13px; }
   .err { color: #d33; } .ok { color: #2a8a3f; }
-  table { width: 100%; table-layout: fixed; border-collapse: collapse; font-size: 13px; margin-top: 10px; }
+  table { width: 100%; table-layout: fixed; min-width: 900px; border-collapse: collapse; font-size: 13px; }
   th, td { text-align: left; padding: 9px 8px; border-bottom: 1px solid #eee; word-break: break-all; vertical-align: middle; }
   th { color: #666; font-weight: 600; white-space: nowrap; }
   th:nth-child(1) { width: 52px; }
@@ -31,6 +31,11 @@
   th:nth-child(4) { width: 90px; }
   th:nth-child(5) { width: 20%; }
   th:nth-child(6) { width: 148px; }
+  .table-wrap { overflow-x: auto; margin-top: 10px; }
+  .table-wrap::-webkit-scrollbar { height: 8px; }
+  .table-wrap::-webkit-scrollbar-track { background: #eef0f5; border-radius: 4px; }
+  .table-wrap::-webkit-scrollbar-thumb { background: #9aa3b8; border-radius: 4px; }
+  .table-wrap::-webkit-scrollbar-thumb:hover { background: #7c86a0; }
   .filter-bar { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
   .filter-bar select { margin: 0; }
   .filter-bar button { margin: 0; }
@@ -96,12 +101,14 @@
         </select>
         <button id="refreshUsers">刷新</button>
       </div>
+      <div class="table-wrap">
       <table>
         <thead><tr>
           <th>ID</th><th>用户名</th><th>邮箱</th><th>状态</th><th>申请说明</th><th>注册时间</th><th>操作</th>
         </tr></thead>
         <tbody id="userRows"></tbody>
       </table>
+      </div>
     </div>
 
     <div id="panel-invites" class="panel">
@@ -116,10 +123,10 @@
       <input id="inviteNote" style="width:260px;" placeholder="发给谁/用途">
       <br><button id="genInvites">生成</button>
       <button id="refreshInvites" class="gray">刷新列表</button>
-      <div class="code-list"><table>
+      <div class="code-list"><div class="table-wrap"><table>
         <thead><tr><th>邀请码</th><th>备注</th><th>使用状态</th><th>过期时间</th><th>创建时间</th></tr></thead>
         <tbody id="inviteRows"></tbody>
-      </table></div>
+      </table></div></div>
     </div>
 
     <div id="panel-settings" class="panel">
