@@ -24,6 +24,12 @@
   .info { font-size: 13px; color: #444; line-height: 1.8; }
   .link { font-size: 13px; margin-top: 14px; }
   .link a { color: #4a7cff; text-decoration: none; }
+  .btn-link {
+    display: inline-block; padding: 5px 14px; border-radius: 8px;
+    background: #e8ecf5; color: #3a5fc8; font-size: 13px; text-decoration: none;
+    transition: background .15s ease, color .15s ease;
+  }
+  .btn-link:hover { background: #4a7cff; color: #fff; text-decoration: none; }
   #loginNeeded { display: none; text-align: center; padding: 60px 0; }
 </style>
 </head>
@@ -39,8 +45,8 @@
     <div class="card">
       <h1>个人中心</h1>
       <div class="info" id="userInfo"></div>
-      <div class="link"><a href="/admin" id="adminLink" style="display:none;">管理后台</a></div>
-      <div class="link"><a href="#" id="logout">退出登录</a></div>
+      <div class="link"><a href="/admin" id="adminLink" class="btn-link" style="display:none;">管理后台</a></div>
+      <div class="link"><a href="#" id="logout" class="btn-link">退出登录</a></div>
     </div>
 
     <div class="card">
