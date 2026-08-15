@@ -252,8 +252,8 @@ document.getElementById('form').addEventListener('submit', async (e) => {
     localStorage.setItem('auth_access_token', data.token);
     if (!safeRedirect()) {
       const links = [];
-      if (data.user && data.user.role === 'admin') links.push('<a href="/admin">管理后台</a>');
-      links.push('<a href="/profile">个人中心</a>');
+      if (data.user && data.user.role === 'admin') links.push('<a href="/admin" style="color:#4a7cff;">管理后台</a>');
+      links.push('<a href="/profile" style="color:#4a7cff;">个人中心</a>');
       showMsg('登录成功！' + links.join('　'), 'ok');
       return;
     }
