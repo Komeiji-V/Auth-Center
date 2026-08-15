@@ -17,8 +17,10 @@ const REFRESH_TTL_DAYS = 30;
 const REG_CODE_PER_HOUR = parseInt(process.env.REG_CODE_PER_HOUR, 10) || 3;
 const PROFILE_CODE_PER_HOUR = parseInt(process.env.PROFILE_CODE_PER_HOUR, 10) || 5;
 
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const EMAIL_RE = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
 const USERNAME_RE = /^[\u4e00-\u9fa5a-zA-Z0-9_]{2,20}$/;
+// HTML 特殊字符（XSS 防护：用户名/邮箱/申请说明等一律禁止）
+const HTML_SPECIAL_RE = /[<>&"'\\]/;
 
 function hashPassword(password) {
   const salt = crypto.randomBytes(16);
@@ -140,6 +142,9 @@ router.post('/register', async (req, res) => {
     }
     if (apply_info && String(apply_info).trim().length > 500) {
       return res.status(400).json({ error: '申请说明不能超过 500 字' });
+    }
+    if (apply_info && HTML_SPECIAL_RE.test(String(apply_info))) {
+      return res.status(400).json({ error: '申请说明包含不允许的字符' });
     }
 
     let usedInvite = null;

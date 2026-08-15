@@ -364,7 +364,9 @@ async function loadUsers() {
     const adminBadge = u.role === 'admin' ? ' <span class="badge admin">admin</span>' : '';
     const canManagePrivileged = isOwner || !(u.role === 'admin' || u.is_owner);
     const ops = [];
-    const uname = u.username;
+    const uname = escapeHtml(u.username);
+    const uemail = escapeHtml(u.email);
+    const uapply = escapeHtml(u.apply_info || '');
     if (u.status === 'pending') {
       ops.push('<button class="green" onclick="doAction(' + u.id + ',\'approve\')">通过</button>');
       ops.push('<button class="danger" onclick="doAction(' + u.id + ',\'reject\',null,\'' + uname + '\')">拒绝</button>');
@@ -391,14 +393,21 @@ async function loadUsers() {
     if (ops.length === 0) ops.push('<span style="color:#bbb;">—</span>');
     tr.innerHTML =
       '<td>' + u.id + '</td>' +
-      '<td>' + u.username + ownerBadge + adminBadge + '</td>' +
-      '<td>' + u.email + '</td>' +
+      '<td>' + uname + ownerBadge + adminBadge + '</td>' +
+      '<td>' + uemail + '</td>' +
       '<td><span class="badge ' + (badges[u.status] || '') + '">' + u.status + '</span></td>' +
-      '<td class="apply">' + (u.apply_info || '') + '</td>' +
+      '<td class="apply">' + uapply + '</td>' +
       '<td class="mono">' + (u.created_at || '').slice(0, 19).replace('T', ' ') + '</td>' +
       '<td>' + ops.join('') + '</td>';
     tbody.appendChild(tr);
   }
+}
+
+// ---------- XSS 转义 ----------
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, (m) => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  }[m]));
 }
 
 // ---------- 通用确认弹窗 ----------
@@ -434,30 +443,30 @@ async function doAction(id, action, extra, username) {
     if (status !== 200) return alert(data.error || '操作失败');
     loadUsers();
   };
-  const name = username || '';
-  switch (action) {
-    case 'ban':
-      showConfirm({ title: '封禁用户', message: '确认封禁 <b>' + name + '</b>？', confirmText: '封禁', danger: true, onConfirm: run });
-      break;
-    case 'reject':
-      showConfirm({ title: '拒绝申请', message: '确认拒绝 <b>' + name + '</b> 的申请？将删除其注册记录，用户可重新注册。', confirmText: '拒绝', danger: true, onConfirm: run });
-      break;
-    case 'unlock':
-      showConfirm({ title: '解锁账号', message: '确认清除 <b>' + name + '</b> 的登录锁定？', confirmText: '解锁', onConfirm: run });
-      break;
-    case 'reset-totp':
-      showConfirm({ title: '重置 TOTP', message: '确认重置 <b>' + name + '</b> 的 TOTP？用户需重新绑定。', confirmText: '重置', onConfirm: run });
-      break;
-    case 'set-admin':
-      if (extra && extra.is_admin) {
-        showConfirm({ title: '设为管理员', message: '确认将 <b>' + name + '</b> 设为管理员？', confirmText: '设为管理员', onConfirm: run });
-      } else {
-        showConfirm({ title: '取消管理员', message: '确认取消 <b>' + name + '</b> 的管理员身份？', confirmText: '取消', danger: true, onConfirm: run });
-      }
-      break;
-    default:
-      run();
-  }
+    const name = escapeHtml(username || '');
+    switch (action) {
+      case 'ban':
+        showConfirm({ title: '封禁用户', message: '确认封禁 <b>' + name + '</b>？', confirmText: '封禁', danger: true, onConfirm: run });
+        break;
+      case 'reject':
+        showConfirm({ title: '拒绝申请', message: '确认拒绝 <b>' + name + '</b> 的申请？将删除其注册记录，用户可重新注册。', confirmText: '拒绝', danger: true, onConfirm: run });
+        break;
+      case 'unlock':
+        showConfirm({ title: '解锁账号', message: '确认清除 <b>' + name + '</b> 的登录锁定？', confirmText: '解锁', onConfirm: run });
+        break;
+      case 'reset-totp':
+        showConfirm({ title: '重置 TOTP', message: '确认重置 <b>' + name + '</b> 的 TOTP？用户需重新绑定。', confirmText: '重置', onConfirm: run });
+        break;
+      case 'set-admin':
+        if (extra && extra.is_admin) {
+          showConfirm({ title: '设为管理员', message: '确认将 <b>' + name + '</b> 设为管理员？', confirmText: '设为管理员', onConfirm: run });
+        } else {
+          showConfirm({ title: '取消管理员', message: '确认取消 <b>' + name + '</b> 的管理员身份？', confirmText: '取消', danger: true, onConfirm: run });
+        }
+        break;
+      default:
+        run();
+    }
 }
 
 // ---------- 编辑用户（模态框）----------

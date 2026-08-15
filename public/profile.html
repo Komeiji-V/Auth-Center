@@ -170,6 +170,12 @@ function msg(id, text, cls) {
   if (el) { el.textContent = text; el.className = 'msg ' + (cls || 'err'); }
 }
 
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, (m) => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  }[m]));
+}
+
 async function init() {
   token = await ensureToken();
   if (!token) return showLoginNeeded();
@@ -182,7 +188,7 @@ async function init() {
   user = data;
   document.getElementById('main').classList.add('show');
   document.getElementById('userInfo').innerHTML =
-    '用户名：<b>' + user.username + '</b><br>邮箱：' + user.email + '<br>角色：' + (user.role === 'admin' ? '管理员' : '普通用户');
+    '用户名：<b>' + escapeHtml(user.username) + '</b><br>邮箱：' + escapeHtml(user.email) + '<br>角色：' + (user.role === 'admin' ? '管理员' : '普通用户');
   if (user.role === 'admin') document.getElementById('adminLink').style.display = 'inline';
   renderTotp();
 }

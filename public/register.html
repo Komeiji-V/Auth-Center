@@ -166,6 +166,12 @@ async function showMsg(html, cls) {
   m.className = 'msg ' + (cls || 'err');
 }
 
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, (m) => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  }[m]));
+}
+
 (async () => {
   try {
     const cfg = await fetch('/api/config').then(r => r.json());
@@ -204,7 +210,7 @@ document.getElementById('form').addEventListener('submit', async (e) => {
       submittedEmail = email;
       document.getElementById('form').style.display = 'none';
       document.getElementById('codeStep').style.display = 'block';
-      let html = '验证码已发送到 <b>' + email + '</b>，10 分钟内有效。';
+      let html = '验证码已发送到 <b>' + escapeHtml(email) + '</b>，10 分钟内有效。';
       if (data.debug_code) html += '<br><span class="debug">[调试模式] 验证码：' + data.debug_code + '</span>';
       return showMsg(html, 'ok');
     }
