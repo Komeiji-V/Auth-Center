@@ -414,6 +414,7 @@ router.get('/config', async (req, res) => {
       site_title: process.env.SITE_TITLE || '认证中心',
       site_icon: process.env.SITE_ICON || '',
       site_bg: process.env.SITE_BG || '',
+      site_bg_register: process.env.SITE_BG_REGISTER || process.env.SITE_BG || '',
     };
     res.json({ flags, redirect_hosts: redirectHosts, site });
   } catch (e) {
