@@ -54,9 +54,11 @@
   .tabbed-card { padding: 0; overflow: hidden; }
   .tabbed-card .panel { padding: 16px 20px; }
   .invite-row { display: flex; gap: 8px; align-items: flex-end; flex-wrap: wrap; margin-bottom: 4px; }
-  .invite-field { display: flex; flex-direction: column; flex: 1; max-width: 170px; }
+  .invite-field { display: flex; flex-direction: column; flex: 1; max-width: 130px; }
   .invite-field input { width: 100%; }
   .invite-field label { margin: 0 0 4px; }
+  .invite-actions { display: flex; align-items: center; gap: 10px; margin-top: 6px; flex-wrap: wrap; }
+  .invite-actions label { margin: 0; white-space: nowrap; }
   .copy-btn { padding: 2px 8px; font-size: 12px; background: #e8ecf5; color: #3a5fc8; margin: 0 0 0 6px; border-radius: 6px; }
   .copy-btn:hover { background: #4a7cff; color: #fff; }
   .panel { display: none; } .panel.active { display: block; }
@@ -186,21 +188,23 @@
       <div class="invite-row">
         <div class="invite-field">
           <label>数量</label>
-          <input id="inviteCount" type="number" value="1" min="1" max="100" style="width:80px;">
+          <input id="inviteCount" type="number" value="1" min="1" max="100">
         </div>
         <div class="invite-field">
           <label>可用次数（0 = 不限）</label>
-          <input id="inviteMaxUses" type="number" value="1" min="0" style="width:80px;">
+          <input id="inviteMaxUses" type="number" value="1" min="0">
         </div>
         <div class="invite-field">
           <label>有效天数（留空永久）</label>
-          <input id="inviteDays" type="number" min="1" style="width:80px;" placeholder="永久">
+          <input id="inviteDays" type="number" min="1" placeholder="永久">
         </div>
       </div>
-      <label>备注（可选）</label>
-      <input id="inviteNote" style="width:260px;" placeholder="发给谁/用途">
-      <br><button id="genInvites">生成</button>
-      <button id="refreshInvites" class="gray">刷新列表</button>
+      <div class="invite-actions">
+        <label>备注（可选）</label>
+        <input id="inviteNote" style="width:260px;" placeholder="发给谁/用途">
+        <button id="genInvites">生成</button>
+        <button id="refreshInvites" class="gray">刷新列表</button>
+      </div>
       <div class="code-list"><div class="table-wrap"><table>
         <thead><tr><th>邀请码</th><th>备注</th><th>使用状态</th><th>过期时间</th><th>创建时间</th></tr></thead>
         <tbody id="inviteRows"></tbody>
