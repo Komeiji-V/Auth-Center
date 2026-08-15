@@ -75,21 +75,39 @@
     padding: 14px 20px;
     border-bottom: 1px solid #eee;
   }
+  .card-top-left {
+    display: flex;
+    align-items: center;
+    gap: 22px;
+    flex-wrap: wrap;
+  }
   .card-title {
     display: flex;
     align-items: center;
     gap: 10px;
-    font-size: 18px;
+    font-size: 22px;
     font-weight: 700;
     color: #333;
   }
   .logo-dot {
-    width: 12px;
-    height: 12px;
+    width: 14px;
+    height: 14px;
     border-radius: 4px;
     background: linear-gradient(135deg, #4a7cff, #3a66d8);
     display: inline-block;
   }
+  .tabs { display: flex; gap: 6px; }
+  .tab {
+    padding: 6px 14px;
+    border-radius: 20px;
+    background: #f0f2f7;
+    color: #555;
+    cursor: pointer;
+    font-size: 13px;
+    transition: all .15s ease;
+  }
+  .tab:hover { background: #e2e8f5; color: #333; }
+  .tab.active { background: #4a7cff; color: #fff; font-weight: 600; }
   .card-user { display: flex; align-items: center; gap: 12px; }
   .user-name { font-size: 14px; font-weight: 600; color: #333; }
   .modal-mask { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 100; align-items: center; justify-content: center; }
@@ -121,13 +139,15 @@
 <div id="app">
   <div class="card tabbed-card">
     <div class="card-top">
-      <div class="card-title"><span class="logo-dot"></span>管理后台</div>
+      <div class="card-top-left">
+        <div class="card-title"><span class="logo-dot"></span>管理后台</div>
+        <div class="tabs">
+          <div class="tab active" data-panel="users">用户管理</div>
+          <div class="tab" data-panel="invites">邀请码</div>
+          <div class="tab" data-panel="settings">注册模式</div>
+        </div>
+      </div>
       <div class="card-user" id="userInfo"></div>
-    </div>
-    <div class="tabs">
-      <div class="tab active" data-panel="users">用户管理</div>
-      <div class="tab" data-panel="invites">邀请码</div>
-      <div class="tab" data-panel="settings">注册模式</div>
     </div>
     <div id="panel-users" class="panel active">
       <h2>用户列表</h2>
