@@ -18,7 +18,7 @@ function validId(v) {
 
 async function loadUser(id) {
   const { rows } = await db.query(
-    'SELECT id, username, email, status, role, is_owner, invite_code_used, apply_info FROM users WHERE id = $1',
+    'SELECT id, username, email, status, role, is_owner, invite_code_used, apply_info, totp_enabled, totp_secret FROM users WHERE id = $1',
     [id]
   );
   return rows[0] || null;
@@ -102,6 +102,28 @@ router.post('/users/:id/reject', ...adminGuard, async (req, res) => {
     res.json({ ok: true, message: '已拒绝该申请，用户可重新注册' });
   } catch (e) {
     console.error('[reject] error:', e);
+    res.status(500).json({ error: '服务器内部错误' });
+  }
+});
+
+// ---- 重置用户 TOTP（静默操作，不发通知；TOTP 只能由本人登录后操作，防盗号）----
+router.post('/users/:id/reset-totp', ...adminGuard, async (req, res) => {
+  try {
+    const id = validId(req.params.id);
+    if (!id) return res.status(400).json({ error: '参数错误' });
+    const u = await loadUser(id);
+    if (!u) return res.status(400).json({ error: '用户不存在' });
+    if (!canManageUser(req.user, u)) {
+      return res.status(403).json({ error: '仅初始管理员（owner）可对管理员执行此操作' });
+    }
+    if (!u.totp_enabled && !u.totp_secret) {
+      return res.status(400).json({ error: '该用户未绑定 TOTP' });
+    }
+    await db.query('UPDATE users SET totp_enabled = FALSE, totp_secret = NULL WHERE id = $1', [id]);
+    db.audit(req.user.username, 'user_reset_totp', req.ip, `target=${u.username}`);
+    res.json({ ok: true, message: '已重置该用户的 TOTP，需重新绑定' });
+  } catch (e) {
+    console.error('[reset-totp] error:', e);
     res.status(500).json({ error: '服务器内部错误' });
   }
 });

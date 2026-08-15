@@ -236,6 +236,9 @@ document.getElementById('form').addEventListener('submit', async (e) => {
     const data = await resp.json();
     if (!resp.ok) {
       showMsg(data.error || '登录失败');
+      if (data.error && data.error.indexOf('用户名或密码错误') !== -1) {
+        showMsg(data.error + '<br><a href="/forgot" style="color:#4a7cff;">忘记密码？</a>');
+      }
       return;
     }
     if (data.need_totp_setup) {

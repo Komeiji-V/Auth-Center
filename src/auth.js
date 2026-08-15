@@ -333,9 +333,9 @@ router.post('/login', async (req, res) => {
       try {
         authenticator.options = { window: 1 };
         const ok = authenticator.check(totp_code, u.totp_secret);
-        if (!ok) return res.status(401).json({ error: 'TOTP 验证码错误' });
+        if (!ok) return res.status(401).json({ error: 'TOTP 验证码错误，若遗失请联系管理员' });
       } catch {
-        return res.status(401).json({ error: 'TOTP 验证失败' });
+        return res.status(401).json({ error: 'TOTP 验证失败，若遗失请联系管理员' });
       }
     }
 
@@ -565,6 +565,88 @@ router.post('/profile/totp-disable', profileAuth, async (req, res) => {
     res.json({ ok: true, message: 'TOTP 已解绑' });
   } catch (e) {
     console.error('[totp disable] error:', e);
+    res.status(500).json({ error: '服务器内部错误' });
+  }
+});
+
+// ---- 找回密码：第一步，账号 +（已绑 TOTP 则需验证 TOTP）→ 发送邮箱重置验证码 ----
+router.post('/forgot-password', async (req, res) => {
+  try {
+    const { account, totp_code } = req.body || {};
+    if (!account) return res.status(400).json({ error: '请输入账号' });
+    const ip = req.ip;
+
+    const { rows } = await db.query(
+      'SELECT id, username, email, totp_enabled, totp_secret, status FROM users WHERE LOWER(username) = $1 OR LOWER(email) = $1',
+      [normalizeAccount(account)]
+    );
+    if (rows.length === 0) {
+      return res.json({ ok: true, message: '如果账号存在，验证码已发送' });
+    }
+    const u = rows[0];
+    if (u.status !== 'active') {
+      return res.json({ ok: true, message: '如果账号存在，验证码已发送' });
+    }
+
+    if (u.totp_enabled) {
+      if (!totp_code) return res.status(400).json({ error: '该账号已开启 TOTP，请输入验证码' });
+      try {
+        authenticator.options = { window: 1 };
+        const ok = authenticator.check(totp_code, u.totp_secret);
+        if (!ok) return res.status(401).json({ error: 'TOTP 验证码错误，若遗失请联系管理员' });
+      } catch {
+        return res.status(401).json({ error: 'TOTP 验证失败，若遗失请联系管理员' });
+      }
+    }
+
+    if (!ipRateLimit(`profile-code:${ip}`, 60 * 60 * 1000, PROFILE_CODE_PER_HOUR)) {
+      return res.status(429).json({ error: '发送太频繁，请稍后再试' });
+    }
+    const code = await issueCode(u.email, 'reset_password', ip);
+    try {
+      const sent = await mail.sendCode(u.email, code, 'reset_password');
+      db.audit(u.username, 'forgot_password_code', ip, '');
+      res.json({
+        ok: true,
+        message: '重置验证码已发送到邮箱',
+        ...(sent.debug ? { debug_code: sent.code } : {}),
+      });
+    } catch (e) {
+      await db.query('DELETE FROM codes WHERE LOWER(email) = $1 AND purpose = $2', [u.email, 'reset_password']);
+      console.error('[forgot-password] send failed:', e.message);
+      res.status(502).json({ error: '邮件发送失败，请稍后再试' });
+    }
+  } catch (e) {
+    console.error('[forgot-password] error:', e);
+    res.status(500).json({ error: '服务器内部错误' });
+  }
+});
+
+// ---- 找回密码：第二步，邮箱验证码 + 新密码 → 重置并吊销全部会话 ----
+router.post('/reset-password', async (req, res) => {
+  try {
+    const { account, code, new_password } = req.body || {};
+    if (!account || !code || !new_password) return res.status(400).json({ error: '参数缺失' });
+    if (new_password.length < 8 || new_password.length > 72) {
+      return res.status(400).json({ error: '新密码长度需为 8-72 位' });
+    }
+    const normAccount = normalizeAccount(account);
+    const { rows: uRows } = await db.query(
+      'SELECT id, username, email FROM users WHERE LOWER(username) = $1 OR LOWER(email) = $1',
+      [normAccount]
+    );
+    if (uRows.length === 0) return res.status(400).json({ error: '账号不存在' });
+    const u = uRows[0];
+
+    const r = await consumeCode(u.email, code, 'reset_password');
+    if (r.error) return res.status(400).json({ error: r.error });
+
+    await db.query('UPDATE users SET password_hash = $1 WHERE id = $2', [hashPassword(new_password), u.id]);
+    await db.query('UPDATE refresh_tokens SET revoked = TRUE WHERE user_id = $1', [u.id]);
+    db.audit(u.username, 'reset_password', req.ip, '');
+    res.json({ ok: true, message: '密码已重置，请重新登录' });
+  } catch (e) {
+    console.error('[reset-password] error:', e);
     res.status(500).json({ error: '服务器内部错误' });
   }
 });

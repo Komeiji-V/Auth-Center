@@ -363,6 +363,9 @@ async function loadUsers() {
         (u.role === 'admin' ? '取消管理员' : '设为管理员') + '</button>');
     }
     if (u.status === 'active' && canManagePrivileged) {
+      ops.push('<button class="orange" onclick="doAction(' + u.id + ',\'reset-totp\')">重置 TOTP</button>');
+    }
+    if (u.status === 'active' && canManagePrivileged) {
       ops.push('<button class="gray" onclick="editUser(' + u.id + ')">编辑</button>');
     }
     if (ops.length === 0) ops.push('<span style="color:#bbb;">—</span>');
@@ -381,6 +384,7 @@ async function loadUsers() {
 async function doAction(id, action, extra) {
   if (action === 'ban' && !confirm('确认封禁该用户？')) return;
   if (action === 'reject' && !confirm('确认拒绝该申请？将删除其注册记录，用户可重新注册。')) return;
+  if (action === 'reset-totp' && !confirm('确认重置该用户的 TOTP？用户需重新绑定。')) return;
   if (action === 'set-admin' && extra && extra.is_admin && !confirm('确认将该用户设为管理员？')) return;
   const body = extra ? JSON.stringify(extra) : '{}';
   const { status, data } = await api('/api/admin/users/' + id + '/' + action, { method: 'POST', body });

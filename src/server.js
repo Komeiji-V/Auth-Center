@@ -47,6 +47,7 @@ app.use('/api/admin', adminRouter);
 
 app.get('/login', (req, res) => res.sendFile(require('path').join(__dirname, '../public/login.html')));
 app.get('/register', (req, res) => res.sendFile(require('path').join(__dirname, '../public/register.html')));
+app.get('/forgot', (req, res) => res.sendFile(require('path').join(__dirname, '../public/forgot.html')));
 app.get('/admin', (req, res) => res.sendFile(require('path').join(__dirname, '../public/admin.html')));
 app.get('/profile', (req, res) => res.sendFile(require('path').join(__dirname, '../public/profile.html')));
 app.get('/totp', (req, res) => res.sendFile(require('path').join(__dirname, '../public/totp.html')));

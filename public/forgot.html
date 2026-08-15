@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>找回密码</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: system-ui, sans-serif; background: #f5f6f8; color: #222; display: flex; align-items: center; justify-content: center; min-height: 100vh; }
+  .card { background: #fff; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,.08); padding: 32px; width: 340px; }
+  h1 { font-size: 20px; margin-bottom: 20px; text-align: center; }
+  label { display: block; font-size: 13px; color: #666; margin: 12px 0 4px; }
+  input { width: 100%; padding: 10px 12px; border: 1px solid #ddd; border-radius: 8px; font-size: 14px; }
+  input:focus { outline: none; border-color: #4a7cff; }
+  button { width: 100%; margin-top: 18px; padding: 11px; background: #4a7cff; color: #fff; border: none; border-radius: 8px; font-size: 15px; cursor: pointer; }
+  button:hover { background: #3a66d8; }
+  button:disabled { background: #a8bdf5; cursor: not-allowed; }
+  .msg { margin-top: 14px; font-size: 13px; line-height: 1.5; word-break: break-all; }
+  .err { color: #d33; }
+  .ok { color: #2a8a3f; }
+  .debug { color: #b58900; font-family: monospace; }
+  .link { margin-top: 14px; font-size: 13px; text-align: center; }
+  .link a { color: #4a7cff; text-decoration: none; }
+  #step2 { display: none; }
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>找回密码</h1>
+  <div id="step1">
+    <label for="account">用户名 / 邮箱</label>
+    <input id="account" autocomplete="username">
+    <div id="totpRow" style="display:none;">
+      <label for="totp">TOTP 验证码</label>
+      <input id="totp" inputmode="numeric" placeholder="6 位数字">
+    </div>
+    <button id="btn1">下一步</button>
+    <div class="msg" id="msg1"></div>
+  </div>
+  <div id="step2">
+    <label for="code">邮箱重置验证码</label>
+    <input id="code" inputmode="numeric" maxlength="6" placeholder="6 位数字">
+    <label for="np">新密码（至少 8 位）</label>
+    <input id="np" type="password" autocomplete="new-password">
+    <label for="np2">确认新密码</label>
+    <input id="np2" type="password" autocomplete="new-password">
+    <button id="btn2">重置密码</button>
+    <div class="msg" id="msg2"></div>
+  </div>
+  <div class="link"><a href="/login">返回登录</a></div>
+</div>
+
+<script>
+function show(id, text, cls) {
+  const el = document.getElementById(id);
+  el.textContent = text;
+  el.className = 'msg ' + (cls || 'err');
+}
+
+document.getElementById('btn1').addEventListener('click', async () => {
+  const account = document.getElementById('account').value.trim();
+  if (!account) return show('msg1', '请输入账号');
+  const btn = document.getElementById('btn1');
+  btn.disabled = true;
+  const body = { account };
+  const t = document.getElementById('totp').value.trim();
+  if (t) body.totp_code = t;
+  try {
+    const resp = await fetch('/api/forgot-password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const data = await resp.json();
+    if (!resp.ok) {
+      if (data.error && data.error.includes('TOTP')) document.getElementById('totpRow').style.display = 'block';
+      show('msg1', data.error || '操作失败');
+      return;
+    }
+    document.getElementById('step1').style.display = 'none';
+    document.getElementById('step2').style.display = 'block';
+    let html = data.message;
+    if (data.debug_code) html += '<br><span class="debug">[调试模式] 验证码：' + data.debug_code + '</span>';
+    show('msg2', html, 'ok');
+  } catch (err) {
+    show('msg1', '网络错误：' + err.message);
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+document.getElementById('btn2').addEventListener('click', async () => {
+  const code = document.getElementById('code').value.trim();
+  const np = document.getElementById('np').value;
+  const np2 = document.getElementById('np2').value;
+  if (!code) return show('msg2', '请输入验证码');
+  if (np !== np2) return show('msg2', '两次输入的密码不一致');
+  const btn = document.getElementById('btn2');
+  btn.disabled = true;
+  try {
+    const resp = await fetch('/api/reset-password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ account: document.getElementById('account').value.trim(), code, new_password: np }),
+    });
+    const data = await resp.json();
+    if (!resp.ok) return show('msg2', data.error || '重置失败');
+    show('msg2', data.message + '，<a href="/login" style="color:#4a7cff;">去登录</a>', 'ok');
+    document.getElementById('step2').querySelectorAll('input').forEach((i) => { i.value = ''; });
+  } catch (err) {
+    show('msg2', '网络错误：' + err.message);
+  } finally {
+    btn.disabled = false;
+  }
+});
+</script>
+</body>
+</html>
