@@ -21,12 +21,6 @@
   .debug { color: #b58900; font-family: monospace; }
   .link { margin-top: 14px; font-size: 13px; text-align: center; }
   .link a { color: #4a7cff; text-decoration: none; }
-  .btn-link {
-    display: inline-block; padding: 5px 14px; border-radius: 8px;
-    background: #e8ecf5; color: #3a5fc8; font-size: 13px; text-decoration: none;
-    transition: background .15s ease, color .15s ease;
-  }
-  .btn-link:hover { background: #4a7cff; color: #fff; text-decoration: none; }
   #codeStep { display: none; }
 </style>
 </head>
@@ -58,7 +52,7 @@
     <button id="btnCode" type="button">验证</button>
   </div>
   <div class="msg" id="msg"></div>
-  <div class="link">已有账号？<a id="loginLink" class="btn-link" href="/login">去登录</a></div>
+  <div class="link">已有账号？<a id="loginLink" href="/login">去登录</a></div>
 </div>
 
 <script src="/site.js"></script>
@@ -120,7 +114,7 @@ document.getElementById('form').addEventListener('submit', async (e) => {
     }
     if (data.status === 'active') {
       const target = redirect ? '/login?redirect=' + encodeURIComponent(redirect) : '/login';
-      showMsg(data.message + '，<a class="btn-link" href="' + target + '">立即登录</a>', 'ok');
+      showMsg(data.message + '，<a href="' + target + '">立即登录</a>', 'ok');
     } else {
       showMsg(data.message + '，管理员通过后会收到通知。', 'ok');
     }
@@ -146,7 +140,7 @@ document.getElementById('btnCode').addEventListener('click', async () => {
     if (!resp.ok) return showMsg(data.error || '验证失败');
     if (data.status === 'active') {
       const target = redirect ? '/login?redirect=' + encodeURIComponent(redirect) : '/login';
-      showMsg(data.message + '，<a class="btn-link" href="' + target + '">立即登录</a>', 'ok');
+      showMsg(data.message + '，<a href="' + target + '">立即登录</a>', 'ok');
     } else {
       showMsg(data.message + '，管理员通过后会收到通知。', 'ok');
     }

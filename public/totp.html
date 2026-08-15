@@ -23,12 +23,6 @@
   .ok { color: #2a8a3f; }
   .link { margin-top: 14px; font-size: 13px; }
   .link a { color: #4a7cff; text-decoration: none; }
-  .btn-link {
-    display: inline-block; padding: 5px 14px; border-radius: 8px;
-    background: #e8ecf5; color: #3a5fc8; font-size: 13px; text-decoration: none;
-    transition: background .15s ease, color .15s ease;
-  }
-  .btn-link:hover { background: #4a7cff; color: #fff; text-decoration: none; }
   #needLogin { display: none; }
 </style>
 </head>
@@ -48,7 +42,7 @@
   <input id="code" inputmode="numeric" maxlength="6" placeholder="123456">
   <button id="confirm">确认绑定</button>
   <div class="msg" id="msg"></div>
-  <div class="link"><a class="btn-link" href="/login">返回登录</a></div>
+  <div class="link"><a href="/login">返回登录</a></div>
 </div>
 
 <div class="card" id="done" style="display:none;">
