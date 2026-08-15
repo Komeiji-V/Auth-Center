@@ -76,16 +76,9 @@
   .card-top {
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    gap: 16px;
+    gap: 22px;
     padding: 14px 20px;
     border-bottom: 1px solid #eee;
-  }
-  .card-top-left {
-    display: flex;
-    align-items: center;
-    gap: 22px;
-    flex-wrap: wrap;
   }
   .card-title {
     display: flex;
@@ -114,12 +107,13 @@
   }
   .tab:hover { color: #4a7cff; }
   .tab.active { color: #4a7cff; font-weight: 600; border-bottom-color: #4a7cff; }
-  .card-user { display: flex; align-items: center; gap: 12px; }
+  .card-user { display: flex; align-items: center; gap: 12px; margin-left: auto; }
   .user-name { font-size: 14px; font-weight: 600; color: #333; }
   @media (max-width: 640px) {
     .card-top { flex-wrap: wrap; }
-    .card-top-left { order: 2; width: 100%; gap: 18px; }
-    .card-user { order: 1; }
+    .card-title { order: 1; }
+    .card-user { order: 2; margin-left: auto; }
+    .tabs { order: 3; width: 100%; gap: 18px; }
   }
   .modal-mask { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 100; align-items: center; justify-content: center; }
   .modal-mask.show { display: flex; }
@@ -157,13 +151,11 @@
 <div id="app">
   <div class="card tabbed-card">
     <div class="card-top">
-      <div class="card-top-left">
-        <div class="card-title"><span class="logo-dot"></span>管理后台</div>
-        <div class="tabs">
-          <div class="tab active" data-panel="users">用户管理</div>
-          <div class="tab" data-panel="invites">邀请码</div>
-          <div class="tab" data-panel="settings">注册模式</div>
-        </div>
+      <div class="card-title"><span class="logo-dot"></span>管理后台</div>
+      <div class="tabs">
+        <div class="tab active" data-panel="users">用户管理</div>
+        <div class="tab" data-panel="invites">邀请码</div>
+        <div class="tab" data-panel="settings">注册模式</div>
       </div>
       <div class="card-user" id="userInfo"></div>
     </div>
