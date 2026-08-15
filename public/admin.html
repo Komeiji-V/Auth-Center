@@ -6,13 +6,39 @@
 <title>管理后台</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: system-ui, sans-serif; background: #f5f6f8; color: #222; }
+  :root {
+    --primary-600: #7c3aed;
+    --primary-400: #c084fc;
+    --gray-900: #111827;
+    --gray-600: #4b5563;
+    --gray-400: #9ca3af;
+    --gray-100: #f3f4f6;
+    --page-bg: #f5f6f8;
+    --card-bg: #fff;
+    --border-c: #eee;
+    --text-c: #222;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --primary-600: #c084fc;
+      --primary-400: #a78bfa;
+      --gray-900: #f3f4f6;
+      --gray-600: #9ca3af;
+      --gray-400: #6b7280;
+      --gray-100: #374151;
+      --page-bg: #16131f;
+      --card-bg: #1f1b2e;
+      --border-c: #2d2740;
+      --text-c: #eceaf5;
+    }
+  }
+  body { font-family: system-ui, sans-serif; background: var(--page-bg); color: var(--text-c); }
   .wrap { max-width: 980px; margin: 40px auto; padding: 0 16px; }
-  .card { background: #fff; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,.08); padding: 20px; margin-bottom: 20px; }
+  .card { background: var(--card-bg); border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,.08); padding: 20px; margin-bottom: 20px; }
   h1 { font-size: 20px; margin-bottom: 16px; }
   h2 { font-size: 15px; margin-bottom: 12px; }
   label { font-size: 13px; color: #666; display: block; margin: 10px 0 4px; }
-  input, select { padding: 8px 10px; border: 1px solid #ddd; border-radius: 8px; font-size: 14px; }
+  input, select { padding: 8px 10px; border: 1px solid #ddd; border-radius: 8px; font-size: 14px; background: var(--card-bg); color: var(--text-c); }
   button { padding: 7px 14px; border: none; border-radius: 8px; font-size: 13px; cursor: pointer; background: #4a7cff; color: #fff; margin: 3px; white-space: nowrap; }
   button:hover { background: #3a66d8; }
   button:disabled { background: #a8bdf5; cursor: not-allowed; }
@@ -23,7 +49,7 @@
   .msg { margin: 10px 0; font-size: 13px; }
   .err { color: #d33; } .ok { color: #2a8a3f; }
   table { width: 100%; table-layout: fixed; border-collapse: collapse; font-size: 13px; margin-top: 10px; }
-  th, td { text-align: left; padding: 9px 8px; border-bottom: 1px solid #eee; word-break: break-all; vertical-align: middle; }
+  th, td { text-align: left; padding: 9px 8px; border-bottom: 1px solid var(--border-c); word-break: break-all; vertical-align: middle; }
   th { color: #666; font-weight: 600; white-space: nowrap; }
   th:nth-child(1) { width: 52px; }
   th:nth-child(2) { width: 15%; }
@@ -36,7 +62,7 @@
   .filter-bar button { margin: 0; }
   .tabs { display: flex; gap: 4px; margin-bottom: 16px; }
   .tab { padding: 8px 18px; border-radius: 8px 8px 0 0; background: #e4e7ec; color: #555; cursor: pointer; }
-  .tab.active { background: #fff; color: #222; font-weight: 600; }
+  .tab.active { background: var(--card-bg); color: #222; font-weight: 600; }
   .panel { display: none; } .panel.active { display: block; }
   .badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 12px; }
   .b-pending { background: #fff3cd; color: #8a6d1a; }
@@ -51,12 +77,49 @@
   #app { display: none; }
   .modal-mask { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 100; align-items: center; justify-content: center; }
   .modal-mask.show { display: flex; }
-  .modal { background: #fff; border-radius: 12px; padding: 24px; width: 360px; box-shadow: 0 8px 30px rgba(0,0,0,.2); }
+  .modal { background: var(--card-bg); border-radius: 12px; padding: 24px; width: 360px; box-shadow: 0 8px 30px rgba(0,0,0,.2); }
   .modal h2 { font-size: 16px; margin-bottom: 14px; }
   .modal label { font-size: 13px; color: #666; display: block; margin: 10px 0 4px; }
   .modal input { width: 100%; padding: 8px 10px; border: 1px solid #ddd; border-radius: 8px; font-size: 14px; }
   .modal .row { text-align: right; margin-top: 16px; }
   .modal .row button { margin: 0 4px; }
+
+  /* ===== fi-page-header 风格头部 ===== */
+  .page-header {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 1.5rem;
+    background: transparent;
+  }
+  .page-header-left { min-width: 0; }
+  .breadcrumb ol { list-style: none; display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+  .crumb-item { display: inline-block; font-size: 0.875rem; font-weight: normal; color: var(--gray-600); }
+  .crumb-item.current { color: var(--gray-900); }
+  .crumb-sep { color: var(--gray-600); font-size: 1rem; line-height: 1; }
+  .page-title {
+    margin-top: 0.25rem;
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--primary-600);
+    line-height: 1.2;
+  }
+  .page-header-right { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+  .admin-badge { font-size: 0.875rem; color: var(--gray-600); }
+  .admin-badge b { color: var(--gray-900); font-weight: 600; }
+  .header-link { color: var(--primary-600); text-decoration: none; font-size: 0.875rem; }
+  .header-link:hover { text-decoration: underline; }
+  .header-btn { margin: 0; }
+  @media (prefers-color-scheme: dark) {
+    .crumb-item { color: var(--gray-400); }
+    .crumb-item.current { color: var(--gray-100); }
+    .crumb-sep { color: var(--gray-400); }
+    .page-title { color: var(--primary-400); }
+    .admin-badge { color: var(--gray-400); }
+    .admin-badge b { color: var(--gray-100); }
+    .header-link { color: var(--primary-400); }
+  }
 </style>
 </head>
 <body>
@@ -76,8 +139,23 @@
 </div>
 
 <div id="app">
-  <h1>管理后台</h1>
-  <div class="msg" id="userInfo"></div>
+  <div class="page-header">
+    <div class="page-header-left">
+      <nav class="breadcrumb" aria-label="面包屑">
+        <ol>
+          <li class="crumb-item">管理后台</li>
+          <li class="crumb-sep">›</li>
+          <li class="crumb-item current" id="crumbCurrent">用户管理</li>
+        </ol>
+      </nav>
+      <h1 class="page-title" id="pageTitle">用户管理</h1>
+    </div>
+    <div class="page-header-right">
+      <span class="admin-badge" id="adminBadge"></span>
+      <a href="/profile" class="header-link">个人中心</a>
+      <button class="gray header-btn" onclick="logout()">退出</button>
+    </div>
+  </div>
   <div class="tabs">
     <div class="tab active" data-panel="users">用户管理</div>
     <div class="tab" data-panel="invites">邀请码</div>
@@ -225,13 +303,20 @@ document.getElementById('loginBtn').addEventListener('click', async () => {
   enterApp();
 });
 
+const PANEL_NAMES = { users: '用户管理', invites: '邀请码', settings: '注册模式' };
+
+function setHeader(panel) {
+  const name = PANEL_NAMES[panel] || '管理后台';
+  document.getElementById('crumbCurrent').textContent = name;
+  document.getElementById('pageTitle').textContent = name;
+}
+
 function enterApp() {
   document.getElementById('loginCard').style.display = 'none';
   document.getElementById('app').style.display = 'block';
-  document.getElementById('userInfo').innerHTML =
-    '当前管理员：<b>' + (currentUser ? currentUser.username : '') + '</b>｜' +
-    '<a href="/profile" style="color:#4a7cff;">个人中心</a>　' +
-    '<button class="gray" onclick="logout()">退出</button>';
+  document.getElementById('adminBadge').innerHTML =
+    '当前管理员：<b>' + (currentUser ? currentUser.username : '') + '</b>';
+  setHeader('users');
   loadUsers();
   loadMode();
   loadInvites();
@@ -410,6 +495,7 @@ document.querySelectorAll('.tab').forEach((tab) => {
     document.querySelectorAll('.panel').forEach((p) => p.classList.remove('active'));
     tab.classList.add('active');
     document.getElementById('panel-' + tab.dataset.panel).classList.add('active');
+    setHeader(tab.dataset.panel);
   });
 });
 
