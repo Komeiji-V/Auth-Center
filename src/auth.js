@@ -22,21 +22,28 @@ const USERNAME_RE = /^[\u4e00-\u9fa5a-zA-Z0-9_]{2,20}$/;
 // HTML 特殊字符（XSS 防护：用户名/邮箱/申请说明等一律禁止）
 const HTML_SPECIAL_RE = /[<>&"'\\]/;
 
+const { promisify } = require('util');
+const scryptAsync = promisify(crypto.scrypt);
+
 function hashPassword(password) {
-  const salt = crypto.randomBytes(16);
-  const hash = crypto.scryptSync(password, salt, SCRYPT.keylen, { N: SCRYPT.N, r: SCRYPT.r, p: SCRYPT.p });
-  return `scrypt$${SCRYPT.N}$${SCRYPT.r}$${SCRYPT.p}$${salt.toString('hex')}$${hash.toString('hex')}`;
+  return new Promise((resolve, reject) => {
+    const salt = crypto.randomBytes(16);
+    scryptAsync(password, salt, SCRYPT.keylen, { N: SCRYPT.N, r: SCRYPT.r, p: SCRYPT.p })
+      .then((hash) => resolve(`scrypt$${SCRYPT.N}$${SCRYPT.r}$${SCRYPT.p}$${salt.toString('hex')}$${hash.toString('hex')}`))
+      .catch(reject);
+  });
 }
 
 function verifyPassword(password, stored) {
   const parts = stored.split('$');
-  if (parts.length !== 6 || parts[0] !== 'scrypt') return false;
+  if (parts.length !== 6 || parts[0] !== 'scrypt') return Promise.resolve(false);
   const [, n, r, p, saltHex, hashHex] = parts;
-  const hash = crypto.scryptSync(password, Buffer.from(saltHex, 'hex'), hashHex.length / 2, {
+  return scryptAsync(password, Buffer.from(saltHex, 'hex'), hashHex.length / 2, {
     N: parseInt(n, 10), r: parseInt(r, 10), p: parseInt(p, 10),
-  });
-  if (hash.length !== Buffer.from(hashHex, 'hex').length) return false;
-  return crypto.timingSafeEqual(hash, Buffer.from(hashHex, 'hex'));
+  }).then((hash) => {
+    if (hash.length !== Buffer.from(hashHex, 'hex').length) return false;
+    return crypto.timingSafeEqual(hash, Buffer.from(hashHex, 'hex'));
+  }).catch(() => false);
 }
 
 function emailBlocked(email) {
@@ -50,10 +57,11 @@ function normalizeAccount(account) {
 }
 
 function signToken(user) {
-  return jwt.sign({ uid: user.id, role: user.role }, process.env.JWT_SECRET, {
-    expiresIn: process.env.JWT_EXPIRES || '1h',
-    algorithm: 'HS256',
-  });
+  return jwt.sign(
+    { uid: user.id, role: user.role, ver: user.token_version || 0 },
+    process.env.JWT_SECRET,
+    { expiresIn: process.env.JWT_EXPIRES || '1h', algorithm: 'HS256' }
+  );
 }
 
 function tokenExpiresIn(token) {
@@ -185,10 +193,11 @@ router.post('/register', async (req, res) => {
         await client.query('SELECT pg_advisory_xact_lock($1)', [OWNER_LOCK_KEY]);
         const { rows: cnt } = await client.query('SELECT COUNT(*)::int AS c FROM users');
         const first = cnt[0].c === 0;
+        const pwdHash = await hashPassword(password);
         await client.query(
           `INSERT INTO users (username, email, password_hash, status, role, invite_code_used, apply_info, is_owner)
            VALUES ($1, $2, $3, 'pending', $4, $5, $6, $7)`,
-          [username.trim(), normEmail, hashPassword(password), first ? 'admin' : 'user', usedInvite,
+          [username.trim(), normEmail, pwdHash, first ? 'admin' : 'user', usedInvite,
             apply_info ? String(apply_info).trim() : null, first]
         );
         if (usedInvite) {
@@ -341,7 +350,7 @@ router.post('/login', async (req, res) => {
       'SELECT * FROM users WHERE LOWER(username) = $1 OR LOWER(email) = $1',
       [normalizeAccount(account)]
     );
-    if (rows.length === 0 || !verifyPassword(password, rows[0].password_hash)) {
+    if (rows.length === 0 || !(await verifyPassword(password, rows[0].password_hash))) {
       db.audit(account, 'login_fail', ip, 'bad_credentials');
       return res.status(401).json({ error: failMsg() });
     }
@@ -490,10 +499,11 @@ router.post('/profile/password', profileAuth, async (req, res) => {
       return res.status(400).json({ error: '新密码长度需为 8-72 位' });
     }
     const { rows } = await db.query('SELECT password_hash FROM users WHERE id = $1', [req.user.id]);
-    if (!verifyPassword(old_password, rows[0].password_hash)) {
+    if (!(await verifyPassword(old_password, rows[0].password_hash))) {
       return res.status(400).json({ error: '旧密码错误' });
     }
-    await db.query('UPDATE users SET password_hash = $1 WHERE id = $2', [hashPassword(new_password), req.user.id]);
+    const newHash = await hashPassword(new_password);
+    await db.query('UPDATE users SET password_hash = $1, token_version = token_version + 1 WHERE id = $2', [newHash, req.user.id]);
     await db.query('UPDATE refresh_tokens SET revoked = TRUE WHERE user_id = $1', [req.user.id]);
     db.audit(req.user.username, 'profile_password_change', req.ip, '');
     res.json({ ok: true, message: '密码已修改，其他设备需重新登录' });
@@ -543,7 +553,7 @@ router.post('/profile/email/verify', profileAuth, async (req, res) => {
     const normEmail = normalizeAccount(new_email);
     const r = await consumeCode(normEmail, code, 'change_email');
     if (r.error) return res.status(400).json({ error: r.error });
-    await db.query('UPDATE users SET email = $1 WHERE id = $2', [normEmail, req.user.id]);
+    await db.query('UPDATE users SET email = $1, token_version = token_version + 1 WHERE id = $2', [normEmail, req.user.id]);
     await db.query('UPDATE refresh_tokens SET revoked = TRUE WHERE user_id = $1', [req.user.id]);
     db.audit(req.user.username, 'profile_email_change', req.ip, `to=${normEmail}`);
     res.json({ ok: true, message: '邮箱已更新' });
@@ -708,7 +718,8 @@ router.post('/reset-password', async (req, res) => {
     const r = await consumeCode(u.email, code, 'reset_password');
     if (r.error) return res.status(400).json({ error: r.error });
 
-    await db.query('UPDATE users SET password_hash = $1 WHERE id = $2', [hashPassword(new_password), u.id]);
+    const newHash = await hashPassword(new_password);
+    await db.query('UPDATE users SET password_hash = $1, token_version = token_version + 1 WHERE id = $2', [newHash, u.id]);
     await db.query('UPDATE refresh_tokens SET revoked = TRUE WHERE user_id = $1', [u.id]);
     db.audit(u.username, 'reset_password', req.ip, '');
     res.json({ ok: true, message: '密码已重置，请重新登录' });

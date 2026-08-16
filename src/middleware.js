@@ -18,11 +18,15 @@ function createAuthMiddleware(secret, db) {
         return res.status(401).json({ error: '登录已过期，请重新登录' });
       }
       const { rows } = await db.query(
-        'SELECT id, username, email, status, role, totp_enabled, is_owner FROM users WHERE id = $1',
+        'SELECT id, username, email, status, role, totp_enabled, is_owner, token_version FROM users WHERE id = $1',
         [payload.uid]
       );
       if (rows.length === 0) return res.status(401).json({ error: '用户不存在' });
       const u = rows[0];
+      // token 版本号比对：改密/重置/改邮箱后旧 access token 立即失效
+      if ((payload.ver || 0) !== (u.token_version || 0)) {
+        return res.status(401).json({ error: '登录已过期，请重新登录' });
+      }
       if (u.status !== 'active') {
         return res.status(403).json({ error: u.status === 'banned' ? '账号已被封禁' : '账号未通过审核' });
       }

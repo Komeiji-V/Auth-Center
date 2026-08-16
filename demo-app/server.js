@@ -37,8 +37,9 @@ app.get('/api/me', async (req, res) => {
   try {
     const jwt = require('jsonwebtoken');
     const payload = jwt.verify(token, process.env.JWT_SECRET, { algorithms: ['HS256'] });
-    const { rows } = await pool.query('SELECT id, username, email, role, status FROM users WHERE id = $1', [payload.uid]);
+    const { rows } = await pool.query('SELECT id, username, email, role, status, token_version FROM users WHERE id = $1', [payload.uid]);
     if (rows.length === 0) return res.json({ guest: true });
+    if ((payload.ver || 0) !== (rows[0].token_version || 0)) return res.json({ guest: true });
     if (rows[0].status !== 'active') return res.json({ guest: true, reason: rows[0].status });
     res.json({ guest: false, user: rows[0] });
   } catch {

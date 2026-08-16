@@ -43,6 +43,7 @@ async function initSchema() {
       invite_code_used TEXT,
       apply_info TEXT,
       is_owner BOOLEAN NOT NULL DEFAULT FALSE,
+      token_version INTEGER NOT NULL DEFAULT 0,
       created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
       approved_at TIMESTAMPTZ,
       banned_at TIMESTAMPTZ
@@ -51,6 +52,7 @@ async function initSchema() {
   // 兼容升级：已有表补充新列（幂等）
   await query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS apply_info TEXT`);
   await query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS is_owner BOOLEAN NOT NULL DEFAULT FALSE`);
+  await query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS token_version INTEGER NOT NULL DEFAULT 0`);
   await query(`
     CREATE TABLE IF NOT EXISTS codes (
       id SERIAL PRIMARY KEY,
