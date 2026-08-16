@@ -30,8 +30,8 @@
   <div id="step1">
     <label for="account">用户名 / 邮箱</label>
     <input id="account" autocomplete="username">
-    <div id="totpRow" style="display:none;">
-      <label for="totp">TOTP 验证码</label>
+    <div id="totpRow">
+      <label for="totp">TOTP 验证码（如账号开启 TOTP 安全验证则必填）</label>
       <input id="totp" inputmode="numeric" placeholder="6 位数字">
     </div>
     <button id="btn1">下一步</button>
@@ -73,7 +73,6 @@ document.getElementById('btn1').addEventListener('click', async () => {
     });
     const data = await resp.json();
     if (!resp.ok) {
-      if (data.error && data.error.includes('TOTP')) document.getElementById('totpRow').style.display = 'block';
       show('msg1', data.error || '操作失败');
       return;
     }

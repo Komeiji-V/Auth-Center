@@ -10,7 +10,7 @@ const { router: authRouter } = require('./auth');
 const { router: adminRouter } = require('./admin');
 
 const app = express();
-app.set('trust proxy', 1);
+app.set('trust proxy', ['loopback', '172.16.0.0/12', '10.0.0.0/8']);
 
 app.disable('x-powered-by');
 app.use((req, res, next) => {
@@ -64,12 +64,13 @@ app.use((err, req, res, next) => {
 
 const PORT = parseInt(process.env.PORT || '8000', 10);
 
-// 每日清理：过期验证码 / 已过期且吊销的 refresh token / 90 天前审计日志
+// 每日清理：过期验证码 / 所有过期 refresh token（含未吊销）/ 90 天前审计日志与邀请码使用记录
 setInterval(async () => {
   try {
     await db.query(`DELETE FROM codes WHERE expires_at < now() - interval '1 day'`);
-    await db.query(`DELETE FROM refresh_tokens WHERE expires_at < now() - interval '1 day' AND revoked = TRUE`);
+    await db.query(`DELETE FROM refresh_tokens WHERE expires_at < now() - interval '1 day'`);
     await db.query(`DELETE FROM audit_log WHERE created_at < now() - interval '90 days'`);
+    await db.query(`DELETE FROM invite_usage_log WHERE created_at < now() - interval '90 days'`);
     console.log('[cleanup] 定时清理完成');
   } catch (e) {
     console.error('[cleanup] 失败:', e.message);

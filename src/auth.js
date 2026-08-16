@@ -239,6 +239,7 @@ router.post('/register', async (req, res) => {
             'UPDATE invite_codes SET used_count = GREATEST(used_count - 1, 0), used_by = NULL, used_at = NULL WHERE code = $1 AND used_by = $2',
             [usedInvite, normEmail]
           );
+          await db.query('DELETE FROM invite_usage_log WHERE code = $1 AND email = $2', [usedInvite, normEmail]);
         }
         res.status(502).json({ error: '邮件发送失败，请稍后再试或联系管理员' });
       }
@@ -328,16 +329,16 @@ router.post('/login', async (req, res) => {
       return res.status(429).json({ error: `尝试次数过多，请 ${check.remainSec} 秒后再试` });
     }
 
+    // 密码错与 TOTP 错返回完全一致的消息（防密码 oracle）；不含剩余次数（次数差异也是可区分信号）
+    const failMsg = () => '密码或 TOTP 验证码错误';
+
     const { rows } = await db.query(
       'SELECT * FROM users WHERE LOWER(username) = $1 OR LOWER(email) = $1',
       [normalizeAccount(account)]
     );
     if (rows.length === 0 || !verifyPassword(password, rows[0].password_hash)) {
       db.audit(account, 'login_fail', ip, 'bad_credentials');
-      const remain = check.remain;
-      return res.status(401).json({
-        error: remain > 0 ? `用户名或密码错误（剩余 ${remain} 次机会）` : '尝试次数过多，已锁定 15 分钟',
-      });
+      return res.status(401).json({ error: failMsg() });
     }
 
     const u = rows[0];
@@ -345,17 +346,18 @@ router.post('/login', async (req, res) => {
     if (u.status === 'banned') return res.status(403).json({ error: '账号已被封禁' });
 
     if (u.totp_enabled) {
-      if (!totp_code) return res.status(400).json({ error: '该账号已开启 TOTP，请输入验证码' });
-      try {
-        authenticator.options = { window: 1 };
-        const ok = authenticator.check(totp_code, u.totp_secret);
-        if (!ok) {
-          loginAttempt(lockKey);
-          return res.status(401).json({ error: 'TOTP 验证码错误，若遗失请联系管理员' });
-        }
-      } catch {
+      // 不带码/错码/校验异常 → 统一计一次并返回与密码错误相同的消息
+      let ok = false;
+      if (totp_code) {
+        try {
+          authenticator.options = { window: 1 };
+          ok = authenticator.check(totp_code, u.totp_secret);
+        } catch { ok = false; }
+      }
+      if (!ok) {
+        db.audit(u.username, 'login_fail', ip, 'bad_totp');
         loginAttempt(lockKey);
-        return res.status(401).json({ error: 'TOTP 验证失败，若遗失请联系管理员' });
+        return res.status(401).json({ error: failMsg() });
       }
     }
 
@@ -396,9 +398,8 @@ router.post('/refresh', async (req, res) => {
     if (rows.length === 0) return res.status(401).json({ error: '刷新令牌无效或已过期，请重新登录' });
 
     const rt = rows[0];
-    // 已吊销的 token 再次使用 = 泄露信号 → 吊销该用户全部会话
+    // 已吊销的 token 再次使用：仅拒绝（不吊销全家，避免被用作强制登出 DoS）
     if (rt.revoked) {
-      await db.query('UPDATE refresh_tokens SET revoked = TRUE WHERE user_id = $1', [rt.user_id]);
       return res.status(401).json({ error: '刷新令牌无效或已过期，请重新登录' });
     }
     if (new Date(rt.expires_at) <= new Date()) {
@@ -554,12 +555,15 @@ router.post('/profile/totp-setup', profileAuth, async (req, res) => {
     if (rows[0].totp_enabled) {
       const { code } = req.body || {};
       if (!code) return res.status(400).json({ error: '已绑定 TOTP，请输入当前验证码以重新生成' });
+      let ok = false;
       try {
         authenticator.options = { window: 1 };
-        const ok = authenticator.check(code, rows[0].totp_secret);
-        if (!ok) return res.status(401).json({ error: 'TOTP 验证码错误' });
-      } catch {
-        return res.status(401).json({ error: 'TOTP 验证失败' });
+        ok = authenticator.check(code, rows[0].totp_secret);
+      } catch { ok = false; }
+      if (!ok) {
+        // 失败计数锁定，防爆破（5 次锁 15 分钟）
+        const ck = loginAttempt(`totp:setup:${req.user.id}`);
+        return res.status(401).json({ error: ck.locked ? '尝试次数过多，请稍后再试' : 'TOTP 验证码错误' });
       }
     }
     const secret = authenticator.generateSecret(20);
@@ -611,33 +615,31 @@ router.post('/profile/totp-disable', profileAuth, async (req, res) => {
 });
 
 // ---- 找回密码：第一步，账号 +（已绑 TOTP 则需验证 TOTP）→ 发送邮箱重置验证码 ----
+// 防枚举：所有分支（不存在/非活跃/无 TOTP/有 TOTP 不带码/TOTP 错）返回同一消息
 router.post('/forgot-password', async (req, res) => {
   try {
     const { account, totp_code } = req.body || {};
     if (!account) return res.status(400).json({ error: '请输入账号' });
     const ip = req.ip;
 
+    const GENERIC = { ok: true, message: '如果账号存在，验证码已发送到邮箱' };
+
     const { rows } = await db.query(
       'SELECT id, username, email, totp_enabled, totp_secret, status FROM users WHERE LOWER(username) = $1 OR LOWER(email) = $1',
       [normalizeAccount(account)]
     );
-    if (rows.length === 0) {
-      return res.json({ ok: true, message: '如果账号存在，验证码已发送' });
-    }
+    if (rows.length === 0) return res.json(GENERIC);
     const u = rows[0];
-    if (u.status !== 'active') {
-      return res.json({ ok: true, message: '如果账号存在，验证码已发送' });
-    }
+    if (u.status !== 'active') return res.json(GENERIC);
 
     if (u.totp_enabled) {
-      if (!totp_code) return res.status(400).json({ error: '该账号已开启 TOTP，请输入验证码' });
+      if (!totp_code) return res.json(GENERIC);
+      let ok = false;
       try {
         authenticator.options = { window: 1 };
-        const ok = authenticator.check(totp_code, u.totp_secret);
-        if (!ok) return res.status(401).json({ error: 'TOTP 验证码错误，若遗失请联系管理员' });
-      } catch {
-        return res.status(401).json({ error: 'TOTP 验证失败，若遗失请联系管理员' });
-      }
+        ok = authenticator.check(totp_code, u.totp_secret);
+      } catch { ok = false; }
+      if (!ok) return res.json(GENERIC);
     }
 
     if (!ipRateLimit(`profile-code:${ip}`, 60 * 60 * 1000, PROFILE_CODE_PER_HOUR)) {
@@ -649,7 +651,7 @@ router.post('/forgot-password', async (req, res) => {
       db.audit(u.username, 'forgot_password_code', ip, '');
       res.json({
         ok: true,
-        message: '重置验证码已发送到邮箱',
+        message: GENERIC.message,
         ...(sent.debug ? { debug_code: sent.code } : {}),
       });
     } catch (e) {

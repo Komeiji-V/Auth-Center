@@ -2,7 +2,10 @@
 # 认证中心：登录/注册/管理页都走它
 auth.example.com {
 	encode zstd gzip
-	reverse_proxy auth:8000
+	reverse_proxy auth:8000 {
+		# 覆写 X-Forwarded-For 为真实客户端 IP（防伪造 XFF 混入）
+		header_up X-Forwarded-For {http.vars.remote_host}
+	}
 }
 
 # 演示小站（以后你的真实小站照此模式加一条）

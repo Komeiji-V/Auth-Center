@@ -301,6 +301,9 @@ router.post('/invite-codes', ...adminGuard, async (req, res) => {
     if (!req.user.is_owner) return res.status(403).json({ error: '仅初始管理员（owner）可生成邀请码' });
     const count = Math.min(Math.max(parseInt((req.body || {}).count, 10) || 1, 1), 100);
     const note = (req.body || {}).note || null;
+    if (note && (note.length > 100 || /[<>&"'\\]/.test(note))) {
+      return res.status(400).json({ error: '备注不能超过 100 字且不含特殊字符' });
+    }
     const maxUsesRaw = parseInt((req.body || {}).max_uses, 10);
     const maxUses = Number.isInteger(maxUsesRaw) && maxUsesRaw >= 0 ? maxUsesRaw : 1; // 0 = 不限次
     const daysRaw = parseInt((req.body || {}).expires_days, 10);
