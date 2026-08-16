@@ -53,6 +53,7 @@ npm install && node src/server.js     # auth: http://localhost:8000
 
 | 文档 | 内容 |
 |---|---|
+| [docs/STATUS.md](docs/STATUS.md) | **项目实况与交接**：当前部署/本地环境、git 信息、演进史、已知事项、新对话入口指引 |
 | [docs/DEPLOY.md](docs/DEPLOY.md) | **部署指南**：VPS 初始化、.env 配置、Caddy/nginx 反代、初始化管理员、验证清单 |
 | [docs/GUIDE.md](docs/GUIDE.md) | **内部教程**：小站接入完整教程（前后端代码）+ 后续开发指南（接口/页面/迁移/测试/发布） |
 | [docs/API.md](docs/API.md) | **接口契约**：全部 27 个接口的方法/参数/响应/错误/限流，注册状态机（agent 可读） |
