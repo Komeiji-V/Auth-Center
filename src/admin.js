@@ -264,7 +264,12 @@ router.post('/users/:id/edit', ...adminGuard, async (req, res) => {
       }
     }
     if (newUsername !== u.username || newEmail !== u.email) {
-      await db.query('UPDATE users SET username = $1, email = $2 WHERE id = $3', [newUsername, newEmail, id]);
+      // 改邮箱与用户自助路径对齐：递增 token_version 使旧 access 立即失效（仅邮箱变化时）
+      if (newEmail !== u.email) {
+        await db.query('UPDATE users SET username = $1, email = $2, token_version = token_version + 1 WHERE id = $3', [newUsername, newEmail, id]);
+      } else {
+        await db.query('UPDATE users SET username = $1, email = $2 WHERE id = $3', [newUsername, newEmail, id]);
+      }
       db.audit(req.user.username, 'user_edit', req.ip, `target=${u.username} -> ${newUsername}/${newEmail}`);
     }
     res.json({ ok: true, user: { id: u.id, username: newUsername, email: newEmail } });

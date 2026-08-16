@@ -404,7 +404,7 @@ router.post('/refresh', async (req, res) => {
 
     // 先按 hash 精确查找（含已吊销），以检测重放攻击
     const { rows } = await db.query(
-      `SELECT rt.id, rt.user_id, rt.revoked, rt.expires_at, u.username, u.role, u.status
+      `SELECT rt.id, rt.user_id, rt.revoked, rt.expires_at, u.username, u.role, u.status, u.token_version
        FROM refresh_tokens rt JOIN users u ON u.id = rt.user_id
        WHERE rt.token_hash = $1`,
       [hashRefresh(refresh_token)]
@@ -422,9 +422,11 @@ router.post('/refresh', async (req, res) => {
     if (rt.status === 'pending') return res.status(403).json({ error: '账号待审核，请等待管理员通过' });
     if (rt.status === 'banned') return res.status(403).json({ error: '账号已被封禁' });
 
-    // 轮换：吊销旧 refresh，签发新的一对
+    // 轮换：吊销旧 refresh，签发新的一对（携带当前 token_version，防止换出的 access 立即失效）
     await db.query('UPDATE refresh_tokens SET revoked = TRUE WHERE id = $1', [rt.id]);
-    const tokens = await issueTokens({ id: rt.user_id, username: rt.username, role: rt.role });
+    const tokens = await issueTokens({
+      id: rt.user_id, username: rt.username, role: rt.role, token_version: rt.token_version || 0,
+    });
     res.json({ ok: true, ...tokens });
   } catch (e) {
     console.error('[refresh] error:', e);
