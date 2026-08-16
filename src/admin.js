@@ -190,7 +190,7 @@ router.post('/users/:id/unlock', ...adminGuard, async (req, res) => {
     if (!canManageUser(req.user, u)) {
       return res.status(403).json({ error: '仅初始管理员（owner）可对管理员执行此操作' });
     }
-    const cleared = clearUserLocks(normalizeAccount(u.username));
+    const cleared = clearUserLocks(normalizeAccount(u.username)) + clearUserLocks(normalizeAccount(u.email));
     db.audit(req.user.username, 'user_unlock', req.ip, `target=${u.username}`);
     res.json({ ok: true, message: `已清除锁定（${cleared} 条）` });
   } catch (e) {

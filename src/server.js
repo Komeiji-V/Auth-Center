@@ -10,7 +10,7 @@ const { router: authRouter } = require('./auth');
 const { router: adminRouter } = require('./admin');
 
 const app = express();
-app.set('trust proxy', true);
+app.set('trust proxy', 1);
 
 app.disable('x-powered-by');
 app.use((req, res, next) => {
@@ -63,6 +63,18 @@ app.use((err, req, res, next) => {
 });
 
 const PORT = parseInt(process.env.PORT || '8000', 10);
+
+// 每日清理：过期验证码 / 已过期且吊销的 refresh token / 90 天前审计日志
+setInterval(async () => {
+  try {
+    await db.query(`DELETE FROM codes WHERE expires_at < now() - interval '1 day'`);
+    await db.query(`DELETE FROM refresh_tokens WHERE expires_at < now() - interval '1 day' AND revoked = TRUE`);
+    await db.query(`DELETE FROM audit_log WHERE created_at < now() - interval '90 days'`);
+    console.log('[cleanup] 定时清理完成');
+  } catch (e) {
+    console.error('[cleanup] 失败:', e.message);
+  }
+}, 24 * 60 * 60 * 1000).unref();
 
 async function main() {
   if (!process.env.DATABASE_URL) throw new Error('缺少 DATABASE_URL 环境变量');

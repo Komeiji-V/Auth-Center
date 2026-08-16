@@ -99,6 +99,15 @@ async function initSchema() {
     )
   `);
   await query(`
+    CREATE TABLE IF NOT EXISTS invite_usage_log (
+      id SERIAL PRIMARY KEY,
+      code TEXT NOT NULL,
+      email TEXT NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+  `);
+  await query('CREATE INDEX IF NOT EXISTS idx_invite_usage_code ON invite_usage_log(code)');
+  await query(`
     CREATE TABLE IF NOT EXISTS audit_log (
       id SERIAL PRIMARY KEY,
       actor TEXT,

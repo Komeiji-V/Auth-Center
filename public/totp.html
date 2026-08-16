@@ -55,9 +55,26 @@
 const REFRESH_KEY = 'auth_refresh_token';
 const TOKEN_KEY = 'auth_access_token';
 const q = new URLSearchParams(location.search);
-const redirect = q.get('redirect') || location.origin + '/admin';
+const redirectParam = q.get('redirect') || '';
 let token = '';
 let secret = '';
+let allowedOrigins = [];
+
+// 防开放重定向：跳转目标必须在白名单内（origin 精确匹配）
+fetch('/api/config').then(r => r.json()).then((cfg) => {
+  allowedOrigins = cfg.redirect_origins || [];
+}).catch(() => {});
+
+function safeRedirect() {
+  if (!redirectParam) return location.origin + '/admin';
+  try {
+    const u = new URL(redirectParam);
+    if (!allowedOrigins.includes(u.origin)) return location.origin + '/admin';
+    return redirectParam;
+  } catch {
+    return location.origin + '/admin';
+  }
+}
 
 function msg(text, cls) {
   const el = document.getElementById('msg');
@@ -113,7 +130,7 @@ document.getElementById('confirm').addEventListener('click', async () => {
   }
   document.getElementById('main').style.display = 'none';
   document.getElementById('done').style.display = 'block';
-  setTimeout(() => { location.href = redirect; }, 1200);
+  setTimeout(() => { location.href = safeRedirect(); }, 1200);
 });
 
 (async () => {
@@ -129,7 +146,7 @@ document.getElementById('confirm').addEventListener('click', async () => {
     return;
   }
   if (me.data.totp_enabled) {
-    location.href = redirect;
+    location.href = safeRedirect();
     return;
   }
   const { status, data } = await api('/api/profile/totp-setup', { method: 'POST' });

@@ -154,7 +154,7 @@ let allowedHosts = [];
 async function refreshConfig() {
   try {
     const cfg = await fetch('/api/config').then(r => r.json());
-    allowedHosts = cfg.redirect_hosts || [];
+    allowedHosts = cfg.redirect_origins || [];
   } catch (e) {}
   const rl = document.getElementById('regLink');
   if (redirect) rl.href = '/register?redirect=' + encodeURIComponent(redirect);
@@ -164,7 +164,7 @@ function safeRedirect() {
   if (!redirect) return null;
   try {
     const u = new URL(redirect);
-    if (!allowedHosts.includes(u.host)) return null;
+    if (!allowedHosts.includes(u.origin)) return null;
     return redirect;
   } catch { return null; }
 }

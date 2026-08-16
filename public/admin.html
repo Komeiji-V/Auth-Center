@@ -543,7 +543,7 @@ async function loadInvites() {
     if (expired) statusHtml = '<span class="badge b-banned">已过期</span>';
     else if (!unlimited && c.used_count >= c.max_uses) statusHtml = '<span class="badge b-banned">已用尽</span>';
     else statusHtml = '<span class="badge b-pending">可用（' + usedText + '）</span>';
-    tr.innerHTML = '<td class="mono">' + c.code + '<button class="copy-btn" onclick="copyInvite(\'' + c.code + '\', this)">复制</button></td><td>' + (c.note || '') + '</td><td>' + statusHtml +
+    tr.innerHTML = '<td class="mono">' + c.code + '<button class="copy-btn" onclick="copyInvite(\'' + c.code + '\', this)">复制</button></td><td>' + escapeHtml(c.note || '') + '</td><td>' + statusHtml +
       (c.used_by ? '（' + c.used_by + '）' : '') +
       '</td><td class="mono">' + (c.expires_at ? (c.expires_at.slice(0, 19).replace('T', ' ')) : '永久') +
       '</td><td class="mono">' + (c.created_at || '').slice(0, 19).replace('T', ' ') + '</td>';

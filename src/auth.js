@@ -172,26 +172,37 @@ router.post('/register', async (req, res) => {
       return res.status(429).json({ error: '发送太频繁，请 1 小时后再试' });
     }
 
-    // 首个用户判定 + 插入原子化：advisory lock 串行化并发注册，防止双 owner
+    // 首个用户判定 + 用户插入 + 邀请码占用原子化（advisory lock 串行化并发注册）
     const OWNER_LOCK_KEY = 8128;
-    const isFirst = await db.withTransaction(async (client) => {
-      await client.query('SELECT pg_advisory_xact_lock($1)', [OWNER_LOCK_KEY]);
-      const { rows: cnt } = await client.query('SELECT COUNT(*)::int AS c FROM users');
-      const first = cnt[0].c === 0;
-      await client.query(
-        `INSERT INTO users (username, email, password_hash, status, role, invite_code_used, apply_info, is_owner)
-         VALUES ($1, $2, $3, 'pending', $4, $5, $6, $7)`,
-        [username.trim(), normEmail, hashPassword(password), first ? 'admin' : 'user', usedInvite,
-          apply_info ? String(apply_info).trim() : null, first]
-      );
-      return first;
-    });
-
-    if (usedInvite) {
-      await db.query(
-        'UPDATE invite_codes SET used_count = used_count + 1, used_by = $1, used_at = now() WHERE code = $2',
-        [normEmail, usedInvite]
-      );
+    let isFirst = false;
+    try {
+      isFirst = await db.withTransaction(async (client) => {
+        await client.query('SELECT pg_advisory_xact_lock($1)', [OWNER_LOCK_KEY]);
+        const { rows: cnt } = await client.query('SELECT COUNT(*)::int AS c FROM users');
+        const first = cnt[0].c === 0;
+        await client.query(
+          `INSERT INTO users (username, email, password_hash, status, role, invite_code_used, apply_info, is_owner)
+           VALUES ($1, $2, $3, 'pending', $4, $5, $6, $7)`,
+          [username.trim(), normEmail, hashPassword(password), first ? 'admin' : 'user', usedInvite,
+            apply_info ? String(apply_info).trim() : null, first]
+        );
+        if (usedInvite) {
+          // 原子条件占用：防止并发超用（max_uses=0 表示不限次）
+          const up = await client.query(
+            `UPDATE invite_codes SET used_count = used_count + 1, used_by = $1, used_at = now()
+             WHERE code = $2 AND (max_uses = 0 OR used_count < max_uses)`,
+            [normEmail, usedInvite]
+          );
+          if (up.rowCount === 0) throw new Error('INVITE_EXHAUSTED');
+          await client.query('INSERT INTO invite_usage_log (code, email) VALUES ($1, $2)', [usedInvite, normEmail]);
+        }
+        return first;
+      });
+    } catch (e) {
+      if (e.message === 'INVITE_EXHAUSTED') {
+        return res.status(400).json({ error: '邀请码已被使用' });
+      }
+      throw e;
     }
 
     // 免邮箱验证直接进入 pending 时：通知管理员审核
@@ -338,8 +349,12 @@ router.post('/login', async (req, res) => {
       try {
         authenticator.options = { window: 1 };
         const ok = authenticator.check(totp_code, u.totp_secret);
-        if (!ok) return res.status(401).json({ error: 'TOTP 验证码错误，若遗失请联系管理员' });
+        if (!ok) {
+          loginAttempt(lockKey);
+          return res.status(401).json({ error: 'TOTP 验证码错误，若遗失请联系管理员' });
+        }
       } catch {
+        loginAttempt(lockKey);
         return res.status(401).json({ error: 'TOTP 验证失败，若遗失请联系管理员' });
       }
     }
@@ -371,15 +386,24 @@ router.post('/refresh', async (req, res) => {
     const { refresh_token } = req.body || {};
     if (!refresh_token) return res.status(400).json({ error: '缺少刷新令牌' });
 
+    // 先按 hash 精确查找（含已吊销），以检测重放攻击
     const { rows } = await db.query(
-      `SELECT rt.id, rt.user_id, u.username, u.role, u.status
+      `SELECT rt.id, rt.user_id, rt.revoked, rt.expires_at, u.username, u.role, u.status
        FROM refresh_tokens rt JOIN users u ON u.id = rt.user_id
-       WHERE rt.token_hash = $1 AND rt.revoked = FALSE AND rt.expires_at > now()`,
+       WHERE rt.token_hash = $1`,
       [hashRefresh(refresh_token)]
     );
     if (rows.length === 0) return res.status(401).json({ error: '刷新令牌无效或已过期，请重新登录' });
 
     const rt = rows[0];
+    // 已吊销的 token 再次使用 = 泄露信号 → 吊销该用户全部会话
+    if (rt.revoked) {
+      await db.query('UPDATE refresh_tokens SET revoked = TRUE WHERE user_id = $1', [rt.user_id]);
+      return res.status(401).json({ error: '刷新令牌无效或已过期，请重新登录' });
+    }
+    if (new Date(rt.expires_at) <= new Date()) {
+      return res.status(401).json({ error: '刷新令牌无效或已过期，请重新登录' });
+    }
     if (rt.status === 'pending') return res.status(403).json({ error: '账号待审核，请等待管理员通过' });
     if (rt.status === 'banned') return res.status(403).json({ error: '账号已被封禁' });
 
@@ -409,10 +433,10 @@ router.get('/userinfo', createAuthMiddleware(process.env.JWT_SECRET, db), (req, 
 router.get('/config', async (req, res) => {
   try {
     const flags = await db.getRegistrationFlags();
-    const redirectHosts = (process.env.CORS_ORIGINS || '')
+    const redirectOrigins = (process.env.CORS_ORIGINS || '')
       .split(',')
       .map((s) => {
-        try { return new URL(s.trim()).host; } catch { return s.trim(); }
+        try { return new URL(s.trim()).origin; } catch { return s.trim(); }
       })
       .filter(Boolean);
     const site = {
@@ -421,7 +445,7 @@ router.get('/config', async (req, res) => {
       site_bg: process.env.SITE_BG || '',
       site_bg_register: process.env.SITE_BG_REGISTER || process.env.SITE_BG || '',
     };
-    res.json({ flags, redirect_hosts: redirectHosts, site });
+    res.json({ flags, redirect_origins: redirectOrigins, site });
   } catch (e) {
     console.error('[config] error:', e);
     res.status(500).json({ error: '服务器内部错误' });
@@ -523,9 +547,21 @@ router.post('/profile/email/verify', profileAuth, async (req, res) => {
   }
 });
 
-// ---- TOTP：生成绑定密钥（160bit + 二维码），所有用户可用 ----
+// ---- TOTP：生成绑定密钥（160bit + 二维码），所有用户可用；已绑定需验证当前 TOTP 防劫持 ----
 router.post('/profile/totp-setup', profileAuth, async (req, res) => {
   try {
+    const { rows } = await db.query('SELECT totp_enabled, totp_secret FROM users WHERE id = $1', [req.user.id]);
+    if (rows[0].totp_enabled) {
+      const { code } = req.body || {};
+      if (!code) return res.status(400).json({ error: '已绑定 TOTP，请输入当前验证码以重新生成' });
+      try {
+        authenticator.options = { window: 1 };
+        const ok = authenticator.check(code, rows[0].totp_secret);
+        if (!ok) return res.status(401).json({ error: 'TOTP 验证码错误' });
+      } catch {
+        return res.status(401).json({ error: 'TOTP 验证失败' });
+      }
+    }
     const secret = authenticator.generateSecret(20);
     await db.query('UPDATE users SET totp_secret = $1 WHERE id = $2', [secret, req.user.id]);
     const uri = authenticator.keyuri(req.user.username, 'AuthCenter', secret);
@@ -637,10 +673,13 @@ router.post('/reset-password', async (req, res) => {
     }
     const normAccount = normalizeAccount(account);
     const { rows: uRows } = await db.query(
-      'SELECT id, username, email FROM users WHERE LOWER(username) = $1 OR LOWER(email) = $1',
+      'SELECT id, username, email, status FROM users WHERE LOWER(username) = $1 OR LOWER(email) = $1',
       [normAccount]
     );
-    if (uRows.length === 0) return res.status(400).json({ error: '账号不存在' });
+    // 账号不存在/非活跃统一走验证码错误消息（防枚举）
+    if (uRows.length === 0 || uRows[0].status !== 'active') {
+      return res.status(400).json({ error: '验证码不存在或已过期，请重新获取' });
+    }
     const u = uRows[0];
 
     const r = await consumeCode(u.email, code, 'reset_password');
