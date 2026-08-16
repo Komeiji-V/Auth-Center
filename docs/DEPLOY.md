@@ -108,17 +108,24 @@ server {
     server_name auth.你的域名;
     # ssl 配置（certbot 生成）
 
-    location / {
+    location ^~ / {
         proxy_pass http://127.0.0.1:8000;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $remote_addr;   # 覆写，防伪造混入
+        proxy_set_header X-Forwarded-For $remote_addr;          # 覆写为真实客户端 IP（防伪造混入）
         proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_http_version 1.1;
+        # 以下两行仅小站有 WebSocket 功能时才需要，认证中心本身无 WS：
+        # proxy_set_header Upgrade $http_upgrade;
+        # proxy_set_header Connection $http_connection;
     }
 }
 ```
 
-> nginx 与 auth 不在同一主机/网段时，需把 nginx 的 IP 加入 `TRUST_PROXY_CIDRS`。
+> 配置要点：
+> - `X-Forwarded-For` 用 `$remote_addr` **覆写**（攻击者伪造的 XFF 被直接丢弃）；若用 `$proxy_add_x_forwarded_for`（追加）也可——认证中心取末尾值，追加后末尾是真实 IP，同样安全，但需注意不要与覆写写法同时出现（后者覆盖前者）
+> - `X-Forwarded-Proto` 只需设置一次
+> - nginx 与 auth 不在同一主机/网段时，需把 nginx 的 IP 加入 `TRUST_PROXY_CIDRS`
 
 ## 七、启动
 
