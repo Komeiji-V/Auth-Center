@@ -27,7 +27,6 @@ Node.js 20 + Express 4 + PostgreSQL 15
 ├─ docker-compose.yml   # auth + demo-app + caddy 容器编排
 ├─ Caddyfile            # 反代配置（域名替换后自动 HTTPS）
 ├─ .env.example         # 全部配置项模板
-├─ init.sql             # PG 一次性建库建账号脚本
 ├─ src/                 # 后端：server/auth/admin/db/mail/rateLimit/middleware
 ├─ public/              # 前端：login/register/profile/totp/admin/forgot + site.js
 ├─ demo-app/            # 演示小站（接入范式）
@@ -37,8 +36,9 @@ Node.js 20 + Express 4 + PostgreSQL 15
 ## 快速开始（本地开发）
 
 ```bash
-# 1. PostgreSQL 15（本地或 Docker），执行 init.sql 建库
-docker run -d --name auth-pg -e POSTGRES_PASSWORD=test123 -e POSTGRES_DB=auth_db -p 5432:5432 postgres:15
+# 1. 准备 PostgreSQL 15 空库（建库/建账号方式自选），把连接串填入 .env 的 DATABASE_URL
+#    表结构无需手动建，认证服务首次启动自动创建
+docker run -d --name auth-pg -e POSTGRES_PASSWORD=test123 -p 5432:5432 postgres:15
 
 # 2. 配置环境（修改 DATABASE_URL / JWT_SECRET；本地 SMTP_DEBUG=true）
 cp .env.example .env

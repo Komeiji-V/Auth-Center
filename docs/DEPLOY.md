@@ -39,14 +39,13 @@ mkdir -p /opt/auth && tar -xzf /opt/auth.tar.gz -C /opt/auth
 cd /opt/auth
 ```
 
-## 四、数据库准备（在 PG 15 上执行一次）
+## 四、数据库准备
 
-```bash
-# 用 PG 超级用户执行（把密码改成强密码）
-psql -U postgres -h 你的PG地址 -f init.sql
-```
+准备一个空的 PostgreSQL 15 数据库（库名、账号、权限**自行管理**，建库方式自选）。
+只需满足：
 
-> `init.sql` 创建 `auth_db` 库 + `auth_user` 账号 + 授权。**表结构无需手动建**，认证服务首次启动自动创建。
+- 连接串可访问（填入 `.env` 的 `DATABASE_URL`）
+- 账号对该库有建表权限（服务首次启动自动创建全部表结构，无需手动执行任何 SQL）
 
 ## 五、配置 .env
 
