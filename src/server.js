@@ -10,7 +10,11 @@ const { router: authRouter } = require('./auth');
 const { router: adminRouter } = require('./admin');
 
 const app = express();
-app.set('trust proxy', ['loopback', '172.16.0.0/12', '10.0.0.0/8']);
+const trustedProxy = (process.env.TRUST_PROXY_CIDRS || 'loopback,172.16.0.0/12,10.0.0.0/8')
+  .split(',')
+  .map((s) => s.trim())
+  .filter(Boolean);
+app.set('trust proxy', trustedProxy);
 
 app.disable('x-powered-by');
 app.use((req, res, next) => {

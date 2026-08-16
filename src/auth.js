@@ -111,7 +111,12 @@ async function consumeCode(email, code, purpose) {
     const remain = CODE_MAX_ATTEMPTS - c.attempts - 1;
     return { error: remain > 0 ? `验证码错误，剩余 ${remain} 次机会` : '验证码已作废，请重新获取' };
   }
-  await db.query('UPDATE codes SET used = TRUE WHERE id = $1', [c.id]);
+  // 原子占用：并发请求仅一个成功（验证码真正一次性）
+  const up = await db.query(
+    'UPDATE codes SET used = TRUE WHERE id = $1 AND used = FALSE RETURNING id',
+    [c.id]
+  );
+  if (up.rowCount === 0) return { error: '验证码已被使用' };
   return { ok: true };
 }
 
@@ -561,8 +566,8 @@ router.post('/profile/totp-setup', profileAuth, async (req, res) => {
         ok = authenticator.check(code, rows[0].totp_secret);
       } catch { ok = false; }
       if (!ok) {
-        // 失败计数锁定，防爆破（5 次锁 15 分钟）
-        const ck = loginAttempt(`totp:setup:${req.user.id}`);
+        // 失败计数锁定，防爆破（5 次锁 15 分钟）；与 confirm/disable 共享同一 key
+        const ck = loginAttempt(`totp:${req.user.id}`);
         return res.status(401).json({ error: ck.locked ? '尝试次数过多，请稍后再试' : 'TOTP 验证码错误' });
       }
     }
@@ -584,8 +589,15 @@ router.post('/profile/totp-confirm', profileAuth, async (req, res) => {
     if (!code) return res.status(400).json({ error: '请输入验证码' });
     const { rows } = await db.query('SELECT totp_secret FROM users WHERE id = $1', [req.user.id]);
     if (rows.length === 0 || !rows[0].totp_secret) return res.status(400).json({ error: '请先生成绑定密钥' });
-    const ok = authenticator.check(code, rows[0].totp_secret);
-    if (!ok) return res.status(400).json({ error: '验证码错误' });
+    let ok = false;
+    try {
+      ok = authenticator.check(code, rows[0].totp_secret);
+    } catch { ok = false; }
+    if (!ok) {
+      // 与 setup/disable 共享失败计数
+      const ck = loginAttempt(`totp:${req.user.id}`);
+      return res.status(401).json({ error: ck.locked ? '尝试次数过多，请稍后再试' : '验证码错误' });
+    }
     await db.query('UPDATE users SET totp_enabled = TRUE WHERE id = $1', [req.user.id]);
     db.audit(req.user.username, 'totp_enable', req.ip, '');
     res.json({ ok: true, message: 'TOTP 已绑定' });
@@ -603,8 +615,15 @@ router.post('/profile/totp-disable', profileAuth, async (req, res) => {
     if (!code) return res.status(400).json({ error: '请输入当前 TOTP 验证码以确认解绑' });
     const { rows } = await db.query('SELECT totp_secret FROM users WHERE id = $1', [req.user.id]);
     if (rows.length === 0 || !rows[0].totp_secret) return res.status(400).json({ error: 'TOTP 数据异常' });
-    const ok = authenticator.check(code, rows[0].totp_secret);
-    if (!ok) return res.status(400).json({ error: '验证码错误' });
+    let ok = false;
+    try {
+      ok = authenticator.check(code, rows[0].totp_secret);
+    } catch { ok = false; }
+    if (!ok) {
+      // 与 setup/confirm 共享失败计数
+      const ck = loginAttempt(`totp:${req.user.id}`);
+      return res.status(401).json({ error: ck.locked ? '尝试次数过多，请稍后再试' : '验证码错误' });
+    }
     await db.query('UPDATE users SET totp_enabled = FALSE, totp_secret = NULL WHERE id = $1', [req.user.id]);
     db.audit(req.user.username, 'totp_disable', req.ip, '');
     res.json({ ok: true, message: 'TOTP 已解绑' });
@@ -624,6 +643,11 @@ router.post('/forgot-password', async (req, res) => {
 
     const GENERIC = { ok: true, message: '如果账号存在，验证码已发送到邮箱' };
 
+    // 限流前置：对所有请求统一计数（429 行为与账号存在性解耦，防枚举）
+    if (!ipRateLimit(`profile-code:${ip}`, 60 * 60 * 1000, PROFILE_CODE_PER_HOUR)) {
+      return res.status(429).json({ error: '发送太频繁，请稍后再试' });
+    }
+
     const { rows } = await db.query(
       'SELECT id, username, email, totp_enabled, totp_secret, status FROM users WHERE LOWER(username) = $1 OR LOWER(email) = $1',
       [normalizeAccount(account)]
@@ -642,9 +666,6 @@ router.post('/forgot-password', async (req, res) => {
       if (!ok) return res.json(GENERIC);
     }
 
-    if (!ipRateLimit(`profile-code:${ip}`, 60 * 60 * 1000, PROFILE_CODE_PER_HOUR)) {
-      return res.status(429).json({ error: '发送太频繁，请稍后再试' });
-    }
     const code = await issueCode(u.email, 'reset_password', ip);
     try {
       const sent = await mail.sendCode(u.email, code, 'reset_password');
