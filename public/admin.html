@@ -26,19 +26,21 @@
   table { width: 100%; table-layout: fixed; min-width: 1300px; border-collapse: collapse; font-size: 13px; }
   th, td { text-align: left; padding: 9px 8px; border-bottom: 1px solid #eee; white-space: nowrap; vertical-align: middle; }
   th { color: #666; font-weight: 600; white-space: nowrap; }
-  th:nth-child(1) { width: 52px; }
-  th:nth-child(2) { width: 12%; }
-  th:nth-child(3) { width: 20%; }
-  th:nth-child(4) { width: 80px; }
-  th:nth-child(5) { width: 22%; }
-  th:nth-child(6) { width: 130px; }
-  th:nth-child(7) { width: 26%; }
-  th:nth-child(1) { width: 52px; }
-  th:nth-child(2) { width: 15%; }
-  th:nth-child(3) { width: 23%; }
-  th:nth-child(4) { width: 90px; }
-  th:nth-child(5) { width: 20%; }
-  th:nth-child(6) { width: 148px; }
+  /* 用户列表列宽（仅作用于用户管理表格） */
+  .user-table th:nth-child(1) { width: 52px; }
+  .user-table th:nth-child(2) { width: 15%; }
+  .user-table th:nth-child(3) { width: 23%; }
+  .user-table th:nth-child(4) { width: 90px; }
+  .user-table th:nth-child(5) { width: 20%; }
+  .user-table th:nth-child(6) { width: 148px; }
+  .user-table th:nth-child(7) { width: 26%; }
+  /* 邀请码列表列宽（邀请码列需容纳 12 位码 + 复制按钮） */
+  .invite-table th:nth-child(1) { width: 200px; }
+  .invite-table th:nth-child(2) { width: 15%; }
+  .invite-table th:nth-child(3) { width: 25%; }
+  .invite-table th:nth-child(4) { width: 130px; }
+  .invite-table th:nth-child(5) { width: 20%; }
+  .invite-table th:nth-child(6) { width: 90px; }
   .table-wrap { overflow-x: auto; margin-top: 10px; }
   .table-wrap::-webkit-scrollbar { height: 8px; }
   .table-wrap::-webkit-scrollbar-track { background: #eef0f5; border-radius: 4px; }
@@ -171,7 +173,7 @@
         <button id="refreshUsers">刷新</button>
       </div>
       <div class="table-wrap">
-      <table>
+      <table class="user-table">
         <thead><tr>
           <th>ID</th><th>用户名</th><th>邮箱</th><th>状态</th><th>申请说明</th><th>注册时间</th><th>操作</th>
         </tr></thead>
@@ -204,7 +206,7 @@
         <button id="genInvites">生成</button>
         <button id="refreshInvites" class="gray">刷新列表</button>
       </div>
-      <div class="code-list"><div class="table-wrap"><table>
+      <div class="code-list"><div class="table-wrap"><table class="invite-table">
         <thead><tr><th>邀请码</th><th>备注</th><th>使用状态</th><th>过期时间</th><th>创建时间</th><th>操作</th></tr></thead>
         <tbody id="inviteRows"></tbody>
       </table></div></div>
