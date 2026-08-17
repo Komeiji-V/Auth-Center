@@ -303,6 +303,17 @@ Refresh Token 轮换：换发新 access + 新 refresh（旧 refresh 作废）。
 
 **响应**：`{ codes: [{ code, note, max_uses, used_count, expires_at, used_by, used_at, created_at }] }`
 
+## POST /api/admin/invite-codes/:code/delete
+
+删除邀请码（**仅 owner**，前端须二次确认后调用）。
+
+- 已注册用户不受影响（`users.invite_code_used` / `invite_usage_log` 为文本记录，无外键依赖）
+- 操作写入审计日志（含删除时的 `used_count` / `used_by`）
+
+**响应**：`{ ok: true }`
+
+**错误**：403（非 owner）；400（邀请码不存在 / 参数错误）。
+
 ---
 
 # 注册模式与状态机

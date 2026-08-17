@@ -205,7 +205,7 @@
         <button id="refreshInvites" class="gray">刷新列表</button>
       </div>
       <div class="code-list"><div class="table-wrap"><table>
-        <thead><tr><th>邀请码</th><th>备注</th><th>使用状态</th><th>过期时间</th><th>创建时间</th></tr></thead>
+        <thead><tr><th>邀请码</th><th>备注</th><th>使用状态</th><th>过期时间</th><th>创建时间</th><th>操作</th></tr></thead>
         <tbody id="inviteRows"></tbody>
       </table></div></div>
     </div>
@@ -515,6 +515,8 @@ document.getElementById('statusFilter').addEventListener('change', loadUsers);
 document.getElementById('refreshUsers').addEventListener('click', loadUsers);
 
 // ---------- 邀请码 ----------
+let currentInviteList = [];
+
 document.getElementById('genInvites').addEventListener('click', async () => {
   const count = parseInt(document.getElementById('inviteCount').value, 10) || 1;
   const maxUses = parseInt(document.getElementById('inviteMaxUses').value, 10);
@@ -532,6 +534,7 @@ document.getElementById('genInvites').addEventListener('click', async () => {
 async function loadInvites() {
   const { status, data } = await api('/api/admin/invite-codes');
   if (status !== 200) return;
+  currentInviteList = data.codes;
   const tbody = document.getElementById('inviteRows');
   tbody.innerHTML = '';
   for (const c of data.codes) {
@@ -546,9 +549,39 @@ async function loadInvites() {
     tr.innerHTML = '<td class="mono">' + c.code + '<button class="copy-btn" onclick="copyInvite(\'' + c.code + '\', this)">复制</button></td><td>' + escapeHtml(c.note || '') + '</td><td>' + statusHtml +
       (c.used_by ? '（' + c.used_by + '）' : '') +
       '</td><td class="mono">' + (c.expires_at ? (c.expires_at.slice(0, 19).replace('T', ' ')) : '永久') +
-      '</td><td class="mono">' + (c.created_at || '').slice(0, 19).replace('T', ' ') + '</td>';
+      '</td><td class="mono">' + (c.created_at || '').slice(0, 19).replace('T', ' ') +
+      '</td><td><button class="danger" onclick="deleteInvite(\'' + c.code + '\')">删除</button></td>';
     tbody.appendChild(tr);
   }
+}
+
+// ---------- 删除邀请码（二次确认弹窗，与用户管理共用）----------
+function deleteInvite(code) {
+  const c = currentInviteList.find((x) => x.code === code);
+  let statusText = '未知';
+  if (c) {
+    const unlimited = c.max_uses === 0;
+    const expired = c.expires_at && new Date(c.expires_at) < new Date();
+    if (expired) statusText = '已过期';
+    else if (!unlimited && c.used_count >= c.max_uses) statusText = '已用尽（' + c.used_count + ' / ' + c.max_uses + ' 次）';
+    else statusText = '可用（' + (unlimited ? '已用 ' + c.used_count + ' 次，不限' : c.used_count + ' / ' + c.max_uses + ' 次') + '）';
+    if (c.used_by) statusText += '，使用人 ' + c.used_by;
+  }
+  showConfirm({
+    title: '删除邀请码',
+    message: '确认删除邀请码 <b class="mono">' + escapeHtml(code) + '</b>？<br>当前状态：' + escapeHtml(statusText) +
+      '<br>删除后该邀请码立即失效，操作不可恢复。',
+    confirmText: '删除',
+    danger: true,
+    onConfirm: async () => {
+      const { status, data } = await api('/api/admin/invite-codes/' + encodeURIComponent(code) + '/delete', {
+        method: 'POST',
+        body: '{}',
+      });
+      if (status !== 200) return alert(data.error || '删除失败');
+      loadInvites();
+    },
+  });
 }
 
 function copyInvite(code, btn) {

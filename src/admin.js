@@ -345,6 +345,27 @@ router.get('/invite-codes', ...adminGuard, async (req, res) => {
   }
 });
 
+// ---- 删除邀请码（仅 owner；前端须二次确认）----
+// 删除后：已注册用户不受影响（users.invite_code_used / invite_usage_log 均为文本记录，无外键依赖）
+router.post('/invite-codes/:code/delete', ...adminGuard, async (req, res) => {
+  try {
+    if (!req.user.is_owner) return res.status(403).json({ error: '仅初始管理员（owner）可删除邀请码' });
+    const code = req.params.code;
+    if (!code) return res.status(400).json({ error: '参数错误' });
+    const { rows } = await db.query(
+      'DELETE FROM invite_codes WHERE code = $1 RETURNING code, used_count, used_by',
+      [code]
+    );
+    if (rows.length === 0) return res.status(400).json({ error: '邀请码不存在' });
+    const c = rows[0];
+    db.audit(req.user.username, 'invite_delete', req.ip, `code=${c.code}, used_count=${c.used_count}, used_by=${c.used_by || 'null'}`);
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('[invite delete] error:', e);
+    res.status(500).json({ error: '服务器内部错误' });
+  }
+});
+
 // ---- 管理员 TOTP：绑定接口已迁移至 /api/profile/totp-*（所有用户通用）----
 
 module.exports = { router };
