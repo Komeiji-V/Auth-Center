@@ -16,6 +16,13 @@ const trustedProxy = (process.env.TRUST_PROXY_CIDRS || 'loopback,172.16.0.0/12,1
   .filter(Boolean);
 app.set('trust proxy', trustedProxy);
 
+const origins = (process.env.CORS_ORIGINS || '')
+  .split(',')
+  .map((s) => s.trim())
+  .filter(Boolean);
+// CSP connect-src：默认仅 self；白名单小站需被登录页跨域 POST 凭证（/api/auth/sso），动态加入
+const connectSrc = ['self', ...origins].join(' ');
+
 app.disable('x-powered-by');
 app.use((req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
@@ -25,15 +32,11 @@ app.use((req, res, next) => {
   res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
   res.setHeader(
     'Content-Security-Policy',
-    "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https: http:; connect-src 'self'"
+    `default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https: http:; connect-src ${connectSrc}`
   );
   next();
 });
 
-const origins = (process.env.CORS_ORIGINS || '')
-  .split(',')
-  .map((s) => s.trim())
-  .filter(Boolean);
 // 未配置白名单时不发 CORS 头（浏览器跨域默认拦截），显式收紧
 app.use(cors({ origin: origins.length ? origins : false, credentials: true }));
 

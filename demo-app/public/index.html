@@ -51,15 +51,14 @@ let AUTH = '';
 let me = { guest: true };
 let score = 0;
 
-// ---------- 登录回跳：URL 带 token 时收入 localStorage 并清掉 URL ----------
+// ---------- 登录回跳（M1 修复）：token 不再走 URL ----------
+// 认证中心登录页将 token POST 到本站 /api/auth/sso，本站后端验签后以 60s 短时 cookie 交还，
+// 此处从 cookie 收入 localStorage 并立即清除 cookie（凭证不进浏览器历史/日志）
 (function () {
-  const q = new URLSearchParams(location.search);
-  const t = q.get('token');
-  if (t) {
-    localStorage.setItem(TOKEN_KEY, t);
-    q.delete('token');
-    const clean = location.pathname + (q.toString() ? '?' + q.toString() : '');
-    history.replaceState(null, '', clean);
+  const m = document.cookie.match(/(?:^|;\s*)demo_sso_token=([^;]*)/);
+  if (m) {
+    localStorage.setItem(TOKEN_KEY, decodeURIComponent(m[1]));
+    document.cookie = 'demo_sso_token=; Max-Age=0; path=/';
     document.getElementById('msg').textContent = '登录成功！';
   }
 })();

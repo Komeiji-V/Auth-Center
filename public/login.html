@@ -178,8 +178,27 @@ function goBackWithToken(token) {
     showMsg('登录成功！', 'ok');
     return;
   }
-  const sep = target.includes('?') ? '&' : '?';
-  location.href = target + sep + 'token=' + encodeURIComponent(token);
+  // M1 修复：凭证不再放进 URL（浏览器历史/两端 access log 会留存明文 token），
+  // 改为跨域 POST 到小站 /api/auth/sso，由小站后端验签后以短时 cookie 交还前端
+  showMsg('登录成功，正在跳转…', 'ok');
+  const ssoUrl = new URL('/api/auth/sso', target).href;
+  fetch(ssoUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ token }),
+  })
+    .then(async (r) => {
+      if (r.ok) {
+        location.href = target;
+        return;
+      }
+      await r.json().catch(() => ({}));
+      throw new Error('HTTP ' + r.status);
+    })
+    .catch(() => {
+      // 安全降级：token 绝不回退到 URL；旧小站未实现 /api/auth/sso 时提示直接访问
+      showMsg('登录成功，但目标站暂不支持安全回跳（/api/auth/sso）。<br>请直接访问目标站，或联系管理员升级接入。', 'err');
+    });
 }
 
 function showMsg(html, cls) {

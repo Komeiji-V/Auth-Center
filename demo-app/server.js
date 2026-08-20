@@ -47,6 +47,24 @@ app.get('/api/me', async (req, res) => {
   }
 });
 
+// 安全回跳端点（M1 修复）：认证中心登录页将 token POST 到这里（凭证不再进 URL）
+// 流程：验签 → 确认用户 active → 以 60s 短时 cookie 交还前端 → 前端收入 localStorage 后清除 cookie
+// 注意：小站接入时需允许认证中心 origin 的跨域 POST（CORS + preflight）
+app.post('/api/auth/sso', async (req, res) => {
+  const token = req.body && req.body.token;
+  if (!token || typeof token !== 'string') return res.status(400).json({ error: '缺少 token' });
+  try {
+    const jwt = require('jsonwebtoken');
+    const payload = jwt.verify(token, process.env.JWT_SECRET, { algorithms: ['HS256'] });
+    const { rows } = await pool.query('SELECT id FROM users WHERE id = $1 AND status = $2', [payload.uid, 'active']);
+    if (rows.length === 0) return res.status(403).json({ error: '用户不存在或未激活' });
+    res.cookie('demo_sso_token', token, { httpOnly: false, sameSite: 'lax', maxAge: 60 * 1000, path: '/' });
+    res.json({ ok: true });
+  } catch {
+    return res.status(401).json({ error: 'token 无效' });
+  }
+});
+
 // 云端存档（需登录；按账号存储，账号通用性由认证中心保证）
 app.get('/api/save', authMiddleware, async (req, res) => {
   const { rows } = await pool.query('SELECT data FROM demo_saves WHERE user_id = $1', [req.user.id]);

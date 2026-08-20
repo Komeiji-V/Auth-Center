@@ -82,22 +82,23 @@ app.get('/api/save', authMiddleware, handler);      // 需要登录的接口
 
 **1. 认证中心地址**：后端提供接口（demo-app 的 `/api/auth-base`），或直接写死在页面配置。
 
-**2. 登录回跳：URL 带 token 时收入 localStorage 并清掉 URL**
+**2. 登录回跳（安全版）：token 不走 URL，从 sso cookie 收入 localStorage**
 
 ```js
 const TOKEN_KEY = 'myapp_token';
+// 认证中心登录页已将 token POST 到本站 /api/auth/sso（后端验签后种 60s 短时 cookie），
+// 此处从 cookie 收入 localStorage 并立即清除（凭证不经过浏览器历史/日志）
 (function () {
-  const q = new URLSearchParams(location.search);
-  const t = q.get('token');
-  if (t) {
-    localStorage.setItem(TOKEN_KEY, t);
-    q.delete('token');
-    const clean = location.pathname + (q.toString() ? '?' + q.toString() : '');
-    history.replaceState(null, '', clean);   // 清掉地址栏的 token，防止被复制分享
+  const m = document.cookie.match(/(?:^|;\s*)demo_sso_token=([^;]*)/);
+  if (m) {
+    localStorage.setItem(TOKEN_KEY, decodeURIComponent(m[1]));
+    document.cookie = 'demo_sso_token=; Max-Age=0; path=/';
     console.log('登录成功');
   }
 })();
 ```
+
+配套后端端点（参考 `demo-app/server.js` 的 `POST /api/auth/sso`）：验签 → 确认用户 active → 种 cookie。
 
 **3. API 请求封装（核心：401 自动回跳静默续期）**
 
@@ -143,21 +144,23 @@ document.getElementById('loginBtn').addEventListener('click', () => {
 ## 三、多小站管理
 
 - **每个小站**：独立部署，复制中间件 + 前端 SDK，配置相同的 `JWT_SECRET`。中间件必须查认证中心的 users 表，所以 `DATABASE_URL` 指向认证库；小站自己的业务数据存自己的库
-- **认证中心侧**：把所有小站域名加入 `CORS_ORIGINS`（这是登录后回跳白名单，漏配则登录后不自动回跳）
+- **认证中心侧**：把所有小站域名加入 `CORS_ORIGINS`（登录后回跳白名单 + CSP `connect-src` + CORS 白名单，漏配则登录后不自动回跳）
+- **小站侧**：必须实现 `POST /api/auth/sso`（凭证安全回跳端点，参考 demo-app），否则登录页会提示"目标站不支持安全回跳"且不跳转
 
 ```
 CORS_ORIGINS=https://game1.你的域名,https://radio.你的域名,https://xxx.你的域名
 ```
 
-- **新增小站流程**：写代码（照 demo-app 范式）→ 部署 → 认证中心 `CORS_ORIGINS` 加域名 → 重启认证中心 → 验证登录回跳
+- **新增小站流程**：写代码（照 demo-app 范式，含 `/api/auth/sso`）→ 部署 → 认证中心 `CORS_ORIGINS` 加域名 → 重启认证中心 → 验证登录回跳
 
 ## 四、常见坑
 
 | 坑 | 原因与解决 |
 |---|---|
 | 登录后停在认证中心不回跳 | 小站域名不在 `CORS_ORIGINS`（回跳白名单）；或 redirect 参数丢失 |
+| 登录后提示"目标站暂不支持安全回跳" | 小站未实现 `POST /api/auth/sso` 端点（安全降级：token 不再走 URL，须升级小站） |
 | 请求一直 401、跳转后仍 401 | refresh token 也被吊销（改过密码/邮箱）；或 `JWT_SECRET` 两边不一致 |
-| token 在地址栏可见 | 正常现象（回跳传递），页面加载后 `history.replaceState` 清除即可 |
+| sso 回跳后未登录 | 小站 `/api/auth/sso` 未验签/未种 cookie；或前端未从 cookie 收 token；或 cookie 跨域被拦（跨注册域需 `SameSite=None; Secure`） |
 | 游客数据与登录数据合并 | 小站自己处理：登录成功后把 localStorage 本地数据合并上传到云端 |
 
 ---

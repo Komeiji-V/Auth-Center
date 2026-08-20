@@ -66,7 +66,7 @@ nano .env
 | `BLOCKED_EMAIL_DOMAINS` | 垃圾邮箱黑名单（可空） |
 | `REG_CODE_PER_HOUR` / `PROFILE_CODE_PER_HOUR` / `GLOBAL_REQ_PER_MIN` | 限流阈值（默认 3 / 5 / 60） |
 | `TRUST_PROXY_CIDRS` | 信任代理网段（默认覆盖 Docker 网段；见反代方案） |
-| `CORS_ORIGINS` | **所有小站域名，登录后回跳白名单来源**，逗号分隔 |
+| `CORS_ORIGINS` | **所有小站域名，登录后回跳白名单来源**，逗号分隔；同时是 CORS 白名单与 CSP `connect-src`（登录页跨域 POST `/api/auth/sso` 依赖） |
 | `ADMIN_TOTP_REQUIRED` | `true` |
 
 **注册模式**（.env 仅决定首次启动默认值，之后管理后台可热切换）：
@@ -148,7 +148,8 @@ docker compose logs -f auth   # 出现 "[server] auth center listening on :8000"
 - [ ] 注册测试账号 → 收到验证码邮件（SMTP 全链路）→ 审核通过 → 收到通知邮件
 - [ ] 找回密码流程（含 TOTP 双因素）
 - [ ] TOTP 扫码绑定 → 登录强制输码
-- [ ] `CORS_ORIGINS` 内的小站能登录回跳；未配域名回跳被拒
+- [ ] `CORS_ORIGINS` 内的小站能登录回跳（小站已实现 `POST /api/auth/sso` 时：登录页跨域 POST 成功、回跳 URL **不含 token**、小站前端从 cookie 收到 token）；未配域名回跳被拒
+- [ ] 登录页响应头 CSP `connect-src` 含全部白名单小站（`CORS_ORIGINS` 动态注入）
 - [ ] 非 owner 后台仅"用户管理"；owner 可生成邀请码/切换模式
 - [ ] `ss -tlnp` 确认 8000/8001 只监听 127.0.0.1
 - [ ] `nmap -p 8000 你的VPS` 为 filtered/closed（80/443 开放）
@@ -160,6 +161,7 @@ docker compose logs -f auth   # 出现 "[server] auth center listening on :8000"
 | 问题 | 处理 |
 |---|---|
 | 登录后不回跳小站 | `CORS_ORIGINS` 未包含该小站域名 |
+| 登录后提示"目标站暂不支持安全回跳" | 小站未实现 `POST /api/auth/sso`（安全降级，token 不再走 URL，需升级小站） |
 | 收不到验证码邮件 | `docker compose logs auth` 查 SMTP 报错；确认 587 出站端口未被云厂商封 |
 | 注册提示"邮箱域名不允许" | `BLOCKED_EMAIL_DOMAINS` 误配 |
 | 修改站点标题/背景 | 改 `.env` → `docker compose restart auth` |

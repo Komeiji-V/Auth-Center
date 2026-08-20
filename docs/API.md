@@ -72,7 +72,7 @@
 ```
 
 - `flags`：注册三开关（管理后台热切换）
-- `redirect_origins`：登录后允许回跳的完整 origin 列表（来自 `CORS_ORIGINS`，**含协议**，回跳白名单）
+- `redirect_origins`：登录后允许回跳的完整 origin 列表（来自 `CORS_ORIGINS`，**含协议**，回跳白名单；同时也是 CSP `connect-src` 与 CORS 白名单来源）
 - `site`：站点外观配置（来自 .env）
 
 ## POST /api/register
@@ -149,6 +149,37 @@ Refresh Token 轮换：换发新 access + 新 refresh（旧 refresh 作废）。
 **响应**：`{ ok: true, token, refresh_token, expires_in }`
 
 **错误**：401（无效/过期/已吊销）。已吊销 token 重放仅拒绝（不吊销其他会话）。
+
+## 小站安全回跳协议（SSO）
+
+> 安全演进（M1）：access token **不再通过 URL query 传递**（浏览器历史/两端 access log 会留存明文 token）。登录页在目标站位于 `redirect_origins` 白名单时，将 token **跨域 POST 到目标站 `/api/auth/sso`**，由小站后端验签后以短时 cookie 交还小站前端。
+
+**流程**：
+
+```
+小站未登录 → 跳 /login?redirect=<小站URL>
+  → 登录/静默续期成功
+  → 登录页 fetch POST <小站>/api/auth/sso { token }   （跨域，需 CORS + CSP connect-src）
+  → 小站后端验签（同 JWT_SECRET）→ 确认用户 active → 种 60s 短时 cookie
+  → 登录页跳转回小站 URL（不含 token）
+  → 小站前端从 cookie 收入 localStorage 并清除 cookie
+  → 后续请求照常带 Authorization: Bearer <token>
+```
+
+**小站端点（参考实现，见 demo-app/server.js）**：`POST /api/auth/sso`
+
+| 项 | 说明 |
+|---|---|
+| 请求体 | `{ token }`（access token） |
+| 校验 | `jwt.verify(token, JWT_SECRET, { algorithms: ['HS256'] })` + 用户存在且 `status='active'` |
+| 成功 | 200 `{ ok: true }` + `Set-Cookie`（短时 cookie，`httpOnly: false`，`SameSite=Lax`，60s 过期） |
+| 错误 | 400 缺少 token；401 token 无效；403 用户不存在或未激活 |
+
+**接入要求**：
+- 小站后端须持有与认证中心一致的 `JWT_SECRET`
+- 小站 CORS 须允许认证中心 origin（含 preflight）；认证中心 `CORS_ORIGINS` 已自动写入 CSP `connect-src`
+- 小站与认证中心同域（如 `music.komeijiv.cn` 与 `auth.komeijiv.cn`）时 `SameSite=Lax` 正常；若跨注册域，需 `SameSite=None; Secure` 并注意第三方 cookie 策略
+- 旧小站未实现 `/api/auth/sso` 时，登录页会提示"目标站不支持安全回跳"并**拒绝回退到 URL 带 token**（安全降级）
 
 ## POST /api/forgot-password
 
