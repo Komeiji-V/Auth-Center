@@ -98,7 +98,7 @@ const TOKEN_KEY = 'myapp_token';
 })();
 ```
 
-配套后端端点（参考 `demo-app/server.js` 的 `POST /api/auth/sso`）：验签 → 确认用户 active → 种 cookie。
+配套后端端点（参考 `demo-app/server.js` 的 `POST /api/auth/sso`）：验签 → 确认用户 active → 种 cookie。**必须包含 CSRF 防护**：Origin/Referer 命中认证中心 + 校验自定义头 `X-Requested-With: AuthCenter`（认证中心登录页会带此头），并配置限流（详见 `docs/API.md`「小站安全回跳协议」）。
 
 **3. API 请求封装（核心：401 自动回跳静默续期）**
 

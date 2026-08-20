@@ -171,13 +171,15 @@ Refresh Token 轮换：换发新 access + 新 refresh（旧 refresh 作废）。
 | 项 | 说明 |
 |---|---|
 | 请求体 | `{ token }`（access token） |
+| 来源校验（CSRF 防护） | ① `Origin` 必须命中认证中心 origin（无 Origin 时用 `Referer` 兜底，两者皆无 → 403）；② 必须携带自定义头 `X-Requested-With: AuthCenter`（跨站 `<form>` 无法携带，且强制浏览器 preflight） |
 | 校验 | `jwt.verify(token, JWT_SECRET, { algorithms: ['HS256'] })` + 用户存在且 `status='active'` |
-| 成功 | 200 `{ ok: true }` + `Set-Cookie`（短时 cookie，`httpOnly: false`，`SameSite=Lax`，60s 过期） |
-| 错误 | 400 缺少 token；401 token 无效；403 用户不存在或未激活 |
+| 成功 | 200 `{ ok: true }` + `Set-Cookie`（短时 cookie，`httpOnly: false`，`SameSite=Lax`，`secure` 按生产 https 开启，60s 过期） |
+| 错误 | 400 缺少 token；401 token 无效；403 非法来源/用户不存在或未激活；429 超限流 |
+| 限流 | 必须配置（demo-app 参考实现为 30 次/分/IP） |
 
 **接入要求**：
 - 小站后端须持有与认证中心一致的 `JWT_SECRET`
-- 小站 CORS 须允许认证中心 origin（含 preflight）；认证中心 `CORS_ORIGINS` 已自动写入 CSP `connect-src`
+- 小站 CORS 须允许认证中心 origin（含 preflight，需放行 `Content-Type` 与 `X-Requested-With` 请求头）；认证中心 `CORS_ORIGINS` 已自动写入 CSP `connect-src`
 - 小站与认证中心同域（如 `music.komeijiv.cn` 与 `auth.komeijiv.cn`）时 `SameSite=Lax` 正常；若跨注册域，需 `SameSite=None; Secure` 并注意第三方 cookie 策略
 - 旧小站未实现 `/api/auth/sso` 时，登录页会提示"目标站不支持安全回跳"并**拒绝回退到 URL 带 token**（安全降级）
 

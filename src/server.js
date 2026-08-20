@@ -16,10 +16,23 @@ const trustedProxy = (process.env.TRUST_PROXY_CIDRS || 'loopback,172.16.0.0/12,1
   .filter(Boolean);
 app.set('trust proxy', trustedProxy);
 
-const origins = (process.env.CORS_ORIGINS || '')
-  .split(',')
-  .map((s) => s.trim())
-  .filter(Boolean);
+// CORS_ORIGINS 解析：new URL 规范化 + 严格格式校验（仅 http(s)://host[:port]，防 CSP 指令注入）
+// 非法/无法解析的条目直接丢弃，保证拼进 CSP connect-src 的值必然安全
+const origins = Array.from(new Set(
+  (process.env.CORS_ORIGINS || '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .map((s) => {
+      try {
+        const u = new URL(s);
+        return /^https?:\/\/[a-zA-Z0-9.\-:[\]]+$/.test(u.origin) ? u.origin : null;
+      } catch {
+        return null;
+      }
+    })
+    .filter(Boolean)
+));
 // CSP connect-src：默认仅 self；白名单小站需被登录页跨域 POST 凭证（/api/auth/sso），动态加入
 const connectSrc = ['self', ...origins].join(' ');
 

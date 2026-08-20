@@ -180,11 +180,12 @@ function goBackWithToken(token) {
   }
   // M1 修复：凭证不再放进 URL（浏览器历史/两端 access log 会留存明文 token），
   // 改为跨域 POST 到小站 /api/auth/sso，由小站后端验签后以短时 cookie 交还前端
+  // 自定义头 X-Requested-With 强制 preflight：跨站 <form> 无法携带自定义头，从源头挡死 CSRF
   showMsg('登录成功，正在跳转…', 'ok');
   const ssoUrl = new URL('/api/auth/sso', target).href;
   fetch(ssoUrl, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'AuthCenter' },
     body: JSON.stringify({ token }),
   })
     .then(async (r) => {

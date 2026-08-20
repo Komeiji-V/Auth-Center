@@ -55,10 +55,25 @@
 
 ## 三、MusicParty 需要做的改动（必读）
 
-### 1. 后端新增 `POST /api/auth/sso`（参考 demo-app/server.js）
+### 1. 后端新增 `POST /api/auth/sso`（参考 demo-app/server.js，已含 CSRF 防护）
 
 ```js
+const AUTH_BASE = process.env.AUTH_BASE;                       // 如 https://auth.komeijiv.cn
+const AUTH_ORIGIN = new URL(AUTH_BASE).origin;                 // 认证中心 origin（白名单）
+const SSO_COOKIE_SECURE = AUTH_BASE.startsWith('https://');    // 生产 https 必须 true
+
 app.post('/api/auth/sso', async (req, res) => {
+  // 限流（必配，参考实现为 30 次/分/IP 内存计数；生产复用现有 IpRateLimiter）
+  if (!rateLimit(req.ip)) return res.status(429).json({ error: '请求过于频繁' });
+
+  // CSRF 防护 1：Origin/Referer 必须命中认证中心（跨站 <form> 的 Origin 是攻击者站点）
+  const origin = req.headers.origin
+    || (req.headers.referer ? (() => { try { return new URL(req.headers.referer).origin; } catch { return ''; } })() : '');
+  if (!origin || origin !== AUTH_ORIGIN) return res.status(403).json({ error: '非法来源' });
+
+  // CSRF 防护 2：必须携带自定义头（跨站 <form> 无法携带，且强制浏览器 preflight）
+  if (req.headers['x-requested-with'] !== 'AuthCenter') return res.status(403).json({ error: '非法来源' });
+
   const token = req.body && req.body.token;
   if (!token || typeof token !== 'string') return res.status(400).json({ error: '缺少 token' });
   try {
@@ -66,7 +81,9 @@ app.post('/api/auth/sso', async (req, res) => {
     // 校验用户存在且 active（查认证中心 users 表，与现有中间件同库）
     const { rows } = await pool.query('SELECT id FROM users WHERE id = $1 AND status = $2', [payload.uid, 'active']);
     if (rows.length === 0) return res.status(403).json({ error: '用户不存在或未激活' });
-    res.cookie('music_sso_token', token, { httpOnly: false, sameSite: 'lax', maxAge: 60 * 1000, path: '/' });
+    res.cookie('music_sso_token', token, {
+      httpOnly: false, sameSite: 'lax', secure: SSO_COOKIE_SECURE, maxAge: 60 * 1000, path: '/',
+    });
     res.json({ ok: true });
   } catch {
     return res.status(401).json({ error: 'token 无效' });
@@ -77,7 +94,8 @@ app.post('/api/auth/sso', async (req, res) => {
 要点：
 - `JWT_SECRET` 与认证中心一致；算法白名单 `HS256`（必须显式指定，防算法混淆）
 - **必须查库校验 `status='active'`**（封禁即时生效；只验签不查库会被封禁用户绕过）
-- cookie 命名可自定义，`SameSite=Lax`（认证中心与小站同为 `komeijiv.cn` 子域，属 same-site，正常生效）
+- **CSRF 双重防护缺一不可**：Origin 校验挡跨站表单；自定义头 `X-Requested-With: AuthCenter` 强制 preflight（CORS 只放行认证中心）
+- cookie 命名可自定义，`SameSite=Lax`（认证中心与小站同为 `komeijiv.cn` 子域，属 same-site，正常生效）；**生产 https 必须 `secure: true`**（本地 http 测试才可为 false）
 
 ### 2. CORS：允许认证中心 origin 的跨域 POST
 
@@ -112,8 +130,20 @@ const TOKEN_KEY = 'music_token';  // 按现状命名
 3. **cookie 为短时一次性**（60s）：仅作为"登录页 → 小站前端"的搬运通道，过期自动失效；token 最终仍存小站自己的 localStorage（现有模型不变）
 4. 认证中心 CSP `connect-src` 已随 `CORS_ORIGINS` 白名单动态放行，**新增小站域名时只需加 `CORS_ORIGINS`，无需改代码**
 
-## 五、回归确认
+## 五、M1 审查反馈修复记录（第二轮）
+
+| 编号 | 问题 | 修复 |
+|---|---|---|
+| A（中危） | sso 端点无 Origin 校验 → 跨站 form POST 会话固定 | 双重防护：① Origin/Referer 必须命中认证中心 origin（无则 403）；② 必须携带自定义头 `X-Requested-With: AuthCenter`（form 无法携带 + 强制 preflight）。认证中心 `login.html` 与 demo-app 参考实现均已加 |
+| B（低危） | CSP `connect-src` 动态注入无格式校验 | `CORS_ORIGINS` 解析改为 `new URL()` 规范化 + 严格正则（仅 `http(s)://host[:port]`）+ 去重，非法条目丢弃（已验证 `;`/空格注入被过滤） |
+| C（低危） | sso cookie 缺 `Secure` | 按 `AUTH_BASE` 是否为 https 自动设置 `secure`（生产 https 必为 true，本地 http 测试为 false，已验证两种配置） |
+| D（提示） | demo-app sso 端点无限流 | 参考实现已加 30 次/分/IP 内存限流（429）；MusicParty 落地时须复用其现有 IpRateLimiter 并确保覆盖该端点 |
+
+**终极演进**：一次性票据模式（URL/cookie 只放 60s 单次 code，绑定目标小站 origin，小站后端换 token）可进一步消除"cookie 搬运 JWT"通道，建议作为下一步架构演进（`docs/API.md`「小站安全回跳协议」有说明），本次未实施。
+
+## 六、回归确认
 
 - 认证中心内部页面（登录/注册/个人中心/管理后台/TOTP）不受影响——改动仅涉及回跳小站的路径
 - 登录锁定、限流、token 版本号等既有安全机制未触碰
-- 本仓库代码改动未提交，等待与其它安全审查项合并后统一提交
+- CSRF 防护测试 9/9 通过（攻击者 Origin/无来源/缺自定义头均 403；合法请求 200；Referer 兜底；超限 429）
+- CSP 注入过滤、cookie Secure 双配置验证通过
