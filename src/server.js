@@ -33,8 +33,9 @@ const origins = Array.from(new Set(
     })
     .filter(Boolean)
 ));
-// CSP connect-src：默认仅 self；白名单小站需被登录页跨域 POST 凭证（/api/auth/sso），动态加入
-const connectSrc = ['self', ...origins].join(' ');
+// CSP connect-src：默认仅 'self'；白名单小站需被登录页跨域 POST 凭证（/api/auth/sso），动态加入
+// 注意：CSP 关键字必须带单引号（'self'），否则会被解析为主机名导致同源请求全部被拦
+const connectSrc = ["'self'", ...origins].join(' ');
 
 app.disable('x-powered-by');
 app.use((req, res, next) => {
