@@ -100,7 +100,8 @@ app.post('/api/auth/sso', async (req, res) => {
 ### 2. CORS：允许认证中心 origin 的跨域 POST
 
 - 需允许 `https://auth.komeijiv.cn`（含 OPTIONS preflight，`Content-Type: application/json` 触发预检）
-- 若 MusicParty 用 `cors` 包：`cors({ origin: ['https://auth.komeijiv.cn', ...自身], methods: ['GET','POST','OPTIONS'] })`；若自有反代：在反代层加 `Access-Control-Allow-Origin` 与 `Access-Control-Allow-Headers: content-type` 响应头并处理 OPTIONS
+- **必须开启 `credentials`**：认证中心登录页的 sso fetch 带 `credentials: 'include'`（跨域 fetch 默认不存储响应 Set-Cookie），小站 CORS 响应须含 `Access-Control-Allow-Credentials: true`
+- 若 MusicParty 用 `cors` 包：`cors({ origin: ['https://auth.komeijiv.cn', ...自身], methods: ['GET','POST','OPTIONS'], credentials: true })`；若自有反代：在反代层加 `Access-Control-Allow-Origin`、`Access-Control-Allow-Headers: content-type, x-requested-with` 与 `Access-Control-Allow-Credentials: true` 响应头并处理 OPTIONS
 
 ### 3. 前端：从 cookie 收 token（替换现有"URL 带 token"逻辑）
 

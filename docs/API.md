@@ -179,7 +179,8 @@ Refresh Token 轮换：换发新 access + 新 refresh（旧 refresh 作废）。
 
 **接入要求**：
 - 小站后端须持有与认证中心一致的 `JWT_SECRET`
-- 小站 CORS 须允许认证中心 origin（含 preflight，需放行 `Content-Type` 与 `X-Requested-With` 请求头）；认证中心 `CORS_ORIGINS` 已自动写入 CSP `connect-src`
+- 小站 CORS 须允许认证中心 origin（含 preflight，需放行 `Content-Type` 与 `X-Requested-With` 请求头，**并开启 `credentials`**）；认证中心 `CORS_ORIGINS` 已自动写入 CSP `connect-src`
+- 认证中心登录页的 sso fetch 使用 `credentials: 'include'`（跨域 fetch 默认不存储响应 Set-Cookie，必须显式 include 才能收到搬运 cookie）——小站 CORS 响应必须含 `Access-Control-Allow-Credentials: true`
 - 小站与认证中心同域（如 `music.komeijiv.cn` 与 `auth.komeijiv.cn`）时 `SameSite=Lax` 正常；若跨注册域，需 `SameSite=None; Secure` 并注意第三方 cookie 策略
 - 旧小站未实现 `/api/auth/sso` 时，登录页会提示"目标站不支持安全回跳"并**拒绝回退到 URL 带 token**（安全降级）
 

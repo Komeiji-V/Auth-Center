@@ -9,7 +9,7 @@ const { authMiddleware, parseToken } = require('./middleware');
 const app = express();
 app.set('trust proxy', true);
 app.disable('x-powered-by');
-app.use(cors({ origin: true })); // 演示站自身不做访问限制，认证中心才有白名单
+app.use(cors({ origin: true, credentials: true })); // 演示站自身不做访问限制；credentials 供 sso 端点跨域 Set-Cookie 被浏览器接受
 app.use(express.json({ limit: '32kb' }));
 
 const pool = new Pool({ connectionString: process.env.DATABASE_URL, max: 5 });

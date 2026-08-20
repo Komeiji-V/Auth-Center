@@ -187,6 +187,8 @@ function goBackWithToken(token) {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'AuthCenter' },
     body: JSON.stringify({ token }),
+    // 关键：跨域 fetch 默认丢弃 Set-Cookie，必须显式 include 才能收到小站的 music_sso_token 搬运 cookie
+    credentials: 'include',
   })
     .then(async (r) => {
       if (r.ok) {
