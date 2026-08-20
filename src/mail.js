@@ -16,6 +16,9 @@ function initMail() {
     host: process.env.SMTP_HOST,
     port: parseInt(process.env.SMTP_PORT || '465', 10),
     secure: process.env.SMTP_SECURE === 'true',
+    // 强制 STARTTLS：587（secure=false）时服务器必须支持 STARTTLS，否则报错不发信，
+    // 杜绝"服务器不通告 STARTTLS 就静默降级明文"（STARTTLS 剥离攻击面）；465（secure=true）下无影响
+    requireTLS: true,
     auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
   });
 }

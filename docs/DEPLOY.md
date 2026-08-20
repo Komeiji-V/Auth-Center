@@ -61,7 +61,7 @@ nano .env
 | `DATABASE_URL` | PG 连接串，如 `postgres://auth_user:密码@127.0.0.1:5432/auth_db`（不同机用内网 IP） |
 | `JWT_SECRET` | **必须生成强随机值**：`openssl rand -hex 32` |
 | `SMTP_DEBUG` | **生产必须 `false`** |
-| `SMTP_HOST/PORT/SECURE` | 如 `smtp.komeijiv.cn / 587 / false`（587 用 STARTTLS） |
+| `SMTP_HOST/PORT/SECURE` | 如 `smtp.komeijiv.cn / 587 / false`（587 用 STARTTLS）。应用层强制 `requireTLS`：587 场景服务器不支持 STARTTLS 将报错不发信（绝不降级明文） |
 | `SMTP_USER/PASS/FROM` | SMTP 账号（建议更换授权码）与发件人 |
 | `BLOCKED_EMAIL_DOMAINS` | 垃圾邮箱黑名单（可空） |
 | `REG_CODE_PER_HOUR` / `PROFILE_CODE_PER_HOUR` / `GLOBAL_REQ_PER_MIN` | 限流阈值（默认 3 / 5 / 60） |
@@ -146,6 +146,7 @@ docker compose logs -f auth   # 出现 "[server] auth center listening on :8000"
 - [ ] `https://auth.你的域名/login` 打开，背景/标题正常
 - [ ] HTTPS 有效，响应头含 `Strict-Transport-Security`
 - [ ] 注册测试账号 → 收到验证码邮件（SMTP 全链路）→ 审核通过 → 收到通知邮件
+- [ ] SMTP 加密链路：`openssl s_client -starttls smtp -connect <smtp_host>:587` 确认服务器支持 STARTTLS（应用已强制 requireTLS，不支持则发信会报错）
 - [ ] 找回密码流程（含 TOTP 双因素）
 - [ ] TOTP 扫码绑定 → 登录强制输码
 - [ ] `CORS_ORIGINS` 内的小站能登录回跳（小站已实现 `POST /api/auth/sso` 时：登录页跨域 POST 成功、回跳 URL **不含 token**、小站前端从 cookie 收到 token）；未配域名回跳被拒
