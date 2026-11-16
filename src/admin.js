@@ -2,6 +2,7 @@ const express = require('express');
 const crypto = require('crypto');
 
 const db = require('./db');
+const session = require('./session');
 const mail = require('./mail');
 const { createAdminMiddleware } = require('./middleware');
 const { normalizeAccount, emailBlocked, EMAIL_RE, USERNAME_RE } = require('./auth');
@@ -9,7 +10,7 @@ const { clearUserLocks } = require('./rateLimit');
 
 const router = express.Router();
 
-const adminGuard = createAdminMiddleware(process.env.JWT_SECRET, db, process.env.ADMIN_TOTP_REQUIRED === 'true');
+const adminGuard = createAdminMiddleware(process.env.ADMIN_TOTP_REQUIRED === 'true');
 
 function validId(v) {
   const id = parseInt(v, 10);
@@ -161,7 +162,7 @@ router.post('/users/:id/ban', ...adminGuard, async (req, res) => {
        WHERE id = $1 RETURNING id, username, email, status`,
       [id]
     );
-    await db.query('UPDATE refresh_tokens SET revoked = TRUE WHERE user_id = $1', [id]);
+    await session.destroyUserSessions(id);
     // 通知小站清掉该用户的会话（封禁后下次授权也会被 findAccount 拒绝）
     await kickIfEnabled(req, id);
     db.audit(req.user.username, 'user_ban', req.ip, `target=${u.username}`);
@@ -279,7 +280,7 @@ router.post('/users/:id/edit', ...adminGuard, async (req, res) => {
       if (dup.length > 0) return res.status(400).json({ error: '该邮箱已被其他账号使用' });
       newEmail = norm;
       if (newEmail !== u.email) {
-        await db.query('UPDATE refresh_tokens SET revoked = TRUE WHERE user_id = $1', [id]);
+        await session.destroyUserSessions(id);
       }
     }
     if (newUsername !== u.username || newEmail !== u.email) {

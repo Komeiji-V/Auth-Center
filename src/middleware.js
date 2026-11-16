@@ -1,36 +1,24 @@
-const jwt = require('jsonwebtoken');
+const session = require('./session');
 
-function parseToken(req) {
-  const h = req.headers.authorization || '';
-  if (h.startsWith('Bearer ')) return h.slice(7);
-  return null;
-}
-
-function createAuthMiddleware(secret, db) {
-  return async function authMiddleware(req, res, next) {
+/**
+ * 会话认证中间件（替代原来的 JWT 校验）
+ *
+ * req.user 字段与原 JWT 版本保持一致：id / username / email / role / status / totp_enabled / is_owner
+ * 每次请求都会查 sessions + users，所以封禁、删号是立即生效的。
+ */
+function createSessionAuth() {
+  return async function sessionAuth(req, res, next) {
     try {
-      const token = parseToken(req);
-      if (!token) return res.status(401).json({ error: '未登录' });
-      let payload;
-      try {
-        payload = jwt.verify(token, secret, { algorithms: ['HS256'] });
-      } catch {
-        return res.status(401).json({ error: '登录已过期，请重新登录' });
+      const s = await session.getSession(req);
+      if (!s) return res.status(401).json({ error: '未登录' });
+
+      if (s.status !== 'active') {
+        return res.status(403).json({
+          error: s.status === 'banned' ? '账号已被封禁' : '账号未通过审核',
+        });
       }
-      const { rows } = await db.query(
-        'SELECT id, username, email, status, role, totp_enabled, is_owner, token_version FROM users WHERE id = $1',
-        [payload.uid]
-      );
-      if (rows.length === 0) return res.status(401).json({ error: '用户不存在' });
-      const u = rows[0];
-      // token 版本号比对：改密/重置/改邮箱后旧 access token 立即失效
-      if ((payload.ver || 0) !== (u.token_version || 0)) {
-        return res.status(401).json({ error: '登录已过期，请重新登录' });
-      }
-      if (u.status !== 'active') {
-        return res.status(403).json({ error: u.status === 'banned' ? '账号已被封禁' : '账号未通过审核' });
-      }
-      req.user = u;
+
+      req.user = s;
       next();
     } catch (e) {
       console.error('[middleware] error:', e);
@@ -39,8 +27,8 @@ function createAuthMiddleware(secret, db) {
   };
 }
 
-function createAdminMiddleware(secret, db, requireTotp) {
-  const auth = createAuthMiddleware(secret, db);
+function createAdminMiddleware(requireTotp) {
+  const auth = createSessionAuth();
   return [
     auth,
     (req, res, next) => {
@@ -53,4 +41,4 @@ function createAdminMiddleware(secret, db, requireTotp) {
   ];
 }
 
-module.exports = { createAuthMiddleware, createAdminMiddleware, parseToken };
+module.exports = { createSessionAuth, createAdminMiddleware };

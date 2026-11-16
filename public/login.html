@@ -47,8 +47,6 @@
 <script>
 const q = new URLSearchParams(location.search);
 const redirect = q.get('redirect') || '';
-const REFRESH_KEY = 'auth_refresh_token';
-let allowedHosts = [];
 
 // ---- 背景取色适配：分桶主色 + 背景与取色同步（同一张图）----
 (function adaptBgColor() {
@@ -151,98 +149,28 @@ let allowedHosts = [];
   }).catch(() => {});
 })();
 
-async function refreshConfig() {
-  const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), 5000);
-  try {
-    const cfg = await fetch('/api/config', { signal: ctrl.signal }).then(r => r.json());
-    allowedHosts = cfg.redirect_origins || [];
-  } catch (e) {}   // 网络错误或超时：白名单保持空（安全降级，回退 /profile）
-  finally { clearTimeout(timer); }
-  const rl = document.getElementById('regLink');
-  if (redirect) rl.href = '/register?redirect=' + encodeURIComponent(redirect);
-}
-
-function safeRedirect() {
-  if (!redirect) return null;
-  try {
-    const u = new URL(redirect);
-    if (!allowedHosts.includes(u.origin)) return null;
-    return redirect;
-  } catch { return null; }
-}
-
-function goBackWithToken(token) {
-  const target = safeRedirect();
-  if (!target) {
-    showMsg('登录成功！', 'ok');
-    return;
-  }
-  // M1 修复：凭证不再放进 URL（浏览器历史/两端 access log 会留存明文 token），
-  // 改为跨域 POST 到小站 /api/auth/sso，由小站后端验签后以短时 cookie 交还前端
-  // 自定义头 X-Requested-With 强制 preflight：跨站 <form> 无法携带自定义头，从源头挡死 CSRF
-  showMsg('登录成功，正在跳转…', 'ok');
-  const ssoUrl = new URL('/api/auth/sso', target).href;
-  fetch(ssoUrl, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'AuthCenter' },
-    body: JSON.stringify({ token }),
-    // 关键：跨域 fetch 默认丢弃 Set-Cookie，必须显式 include 才能收到小站的 music_sso_token 搬运 cookie
-    credentials: 'include',
-  })
-    .then(async (r) => {
-      if (r.ok) {
-        location.href = target;
-        return;
-      }
-      await r.json().catch(() => ({}));
-      throw new Error('HTTP ' + r.status);
-    })
-    .catch(() => {
-      // 安全降级：token 绝不回退到 URL；旧小站未实现 /api/auth/sso 时提示直接访问
-      showMsg('登录成功，但目标站暂不支持安全回跳（/api/auth/sso）。<br>请直接访问目标站，或联系管理员升级接入。', 'err');
-    });
-}
-
 function showMsg(html, cls) {
   const m = document.getElementById('msg');
   m.innerHTML = html;
   m.className = 'msg ' + (cls || 'err');
 }
 
-async function silentRefresh() {
-  const target = safeRedirect();
-  const access = localStorage.getItem('auth_access_token');
-  if (access) {
-    const me = await fetch('/api/userinfo', { headers: { Authorization: 'Bearer ' + access } })
-      .then((r) => r.json()).catch(() => null);
-    if (me && me.username) {
-      if (target) { goBackWithToken(access); return; }
-      location.href = '/profile';
-      return;
-    }
-  }
-  const rt = localStorage.getItem(REFRESH_KEY);
-  if (!rt) return;
+// 已有会话就直接跳走，不再需要静默续期
+async function autoEnter() {
   try {
-    const resp = await fetch('/api/refresh', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ refresh_token: rt }),
-    });
-    const data = await resp.json();
-    if (resp.ok && data.token) {
-      localStorage.setItem(REFRESH_KEY, data.refresh_token);
-      localStorage.setItem('auth_access_token', data.token);
-      showMsg('登录状态有效，正在跳转…', 'ok');
-      if (target) { goBackWithToken(data.token); return; }
-      location.href = '/profile';
-      return;
-    }
-    localStorage.removeItem(REFRESH_KEY);
-    localStorage.removeItem('auth_access_token');
-  } catch (e) {}
+    const r = await fetch('/api/userinfo');
+    if (!r.ok) return false;
+    const u = await r.json();
+    const target = redirect && redirect.startsWith('/') ? redirect : (u.role === 'admin' ? '/admin' : '/profile');
+    location.href = target;
+    return true;
+  } catch {
+    return false;
+  }
 }
+
+const regLink = document.getElementById('regLink');
+if (regLink && redirect) regLink.href = '/register?redirect=' + encodeURIComponent(redirect);
 
 document.getElementById('form').addEventListener('submit', async (e) => {
   e.preventDefault();
@@ -269,21 +197,15 @@ document.getElementById('form').addEventListener('submit', async (e) => {
       return;
     }
     if (data.need_totp_setup) {
-      localStorage.setItem(REFRESH_KEY, data.refresh_token);
-      localStorage.setItem('auth_access_token', data.token);
-      showMsg('你是管理员，首次登录需先绑定 TOTP：<a href="/totp?redirect=' + encodeURIComponent(location.origin + '/admin') + '">前往绑定</a>', 'ok');
+      showMsg('你是管理员，首次登录需先绑定 TOTP：<a href="/totp?redirect=' +
+        encodeURIComponent('/admin') + '" style="color:#4a7cff;">前往绑定</a>', 'ok');
       return;
     }
-    localStorage.setItem(REFRESH_KEY, data.refresh_token);
-    localStorage.setItem('auth_access_token', data.token);
-    if (!safeRedirect()) {
-      const links = [];
-      if (data.user && data.user.role === 'admin') links.push('<a href="/admin" style="color:#4a7cff;">管理后台</a>');
-      links.push('<a href="/profile" style="color:#4a7cff;">个人中心</a>');
-      showMsg('登录成功！' + links.join('　'), 'ok');
-      return;
-    }
-    goBackWithToken(data.token);
+    const target = redirect && redirect.startsWith('/')
+      ? redirect
+      : (data.user.role === 'admin' ? '/admin' : '/profile');
+    showMsg('登录成功，正在跳转…', 'ok');
+    location.href = target;
   } catch (err) {
     showMsg('网络错误：' + err.message);
   } finally {
@@ -291,7 +213,7 @@ document.getElementById('form').addEventListener('submit', async (e) => {
   }
 });
 
-refreshConfig().then(silentRefresh);
+autoEnter();
 </script>
 </body>
 </html>

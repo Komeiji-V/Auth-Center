@@ -21,7 +21,7 @@
 
 | 项 | 状态 |
 |---|---|
-| 本地服务 | auth=8000、demo-app=8001（本地调试 SMTP_DEBUG=true，验证码在日志/响应 debug_code） |
+| 本地服务 | auth=8000（本地调试 SMTP_DEBUG=true，验证码在日志/响应 debug_code） |
 | 数据库 | Docker 容器 test-pg（postgres:15，端口 5433，库 auth_db） |
 | 测试账号 | 见本地数据库（admin1=owner 等）；密码/TOTP 密钥不记录于仓库，按需从本地数据库读取或重新绑定 |
 
@@ -36,7 +36,7 @@
 
 ## 四、关键设计决策与演进史
 
-- **token 版本号**（`users.token_version`）：改密码/重置密码/改邮箱（自助与管理员路径一致）后，所有旧 access token 立即失效；JWT payload 携带 `ver`，中间件比对（认证中心与 demo-app 副本同步实现）
+- **服务端会话**（`sessions` 表）：浏览器只持 HttpOnly cookie；改密码/重置密码/改邮箱/封禁/删号都会删除该用户全部会话，立即失效（取代了原 JWT + token_version + refresh_tokens 方案）
 - **scrypt 异步化**：`hashPassword`/`verifyPassword` 使用 `crypto.scrypt` 异步版（消除事件循环阻塞，30 并发登录实测 ~123ms）
 - **限流体系**：登录锁定（5 次/15 分钟，密码与 TOTP 错误共享计数）、TOTP 操作锁定（setup/confirm/disable 共享 `totp:<uid>`）、发码频率（3~5 次/时/IP）、全局 60 次/分/IP；限流为进程内存实现，重启清零
 - **信任代理**：`TRUST_PROXY_CIDRS` 可配置（默认 loopback + Docker 网段），反代须覆写/追加 XFF（openresty 配置已按此部署）

@@ -79,17 +79,18 @@ async function initSchema() {
     )
   `);
   await query('CREATE INDEX IF NOT EXISTS idx_codes_email ON codes(email)');
+  // ===== 服务端会话（替代 JWT + refresh token）=====
+  // 浏览器只持有 HttpOnly cookie，会话本身是撤销单位，不需要 token 版本号
   await query(`
-    CREATE TABLE IF NOT EXISTS refresh_tokens (
-      id SERIAL PRIMARY KEY,
-      user_id INTEGER NOT NULL,
-      token_hash TEXT UNIQUE NOT NULL,
-      expires_at TIMESTAMPTZ NOT NULL,
-      revoked BOOLEAN NOT NULL DEFAULT FALSE,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    CREATE TABLE IF NOT EXISTS sessions (
+      id         TEXT PRIMARY KEY,
+      user_id    INTEGER NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      expires_at TIMESTAMPTZ NOT NULL
     )
   `);
-  await query('CREATE INDEX IF NOT EXISTS idx_refresh_user ON refresh_tokens(user_id)');
+  await query('CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions (user_id)');
+  await query('CREATE INDEX IF NOT EXISTS idx_sessions_exp  ON sessions (expires_at)');
   await query(`
     CREATE TABLE IF NOT EXISTS invite_codes (
       id SERIAL PRIMARY KEY,

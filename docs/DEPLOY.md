@@ -92,7 +92,7 @@ auth.你的域名 {
 }
 game1.你的域名 {
 	encode zstd gzip
-	reverse_proxy demo-app:8001
+	# 小站独立部署，接入方式见 docs/GUIDE.md
 }
 ```
 

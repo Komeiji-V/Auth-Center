@@ -3,8 +3,11 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 
+const cookieParser = require('cookie-parser');
+
 const db = require('./db');
 const mail = require('./mail');
+const session = require('./session');
 const { ipRateLimit } = require('./rateLimit');
 const { router: authRouter } = require('./auth');
 const { router: adminRouter } = require('./admin');
@@ -67,6 +70,29 @@ app.use((req, res, next) => {
   next();
 });
 
+app.use(cookieParser());
+
+// CSRF 防护：改用 cookie 认证后，写操作必须来自本站。
+// Bearer token 时代天然免疫 CSRF（跨站表单带不上 Authorization 头），换成 cookie 后必须补上。
+// SameSite=Lax 已挡掉大部分跨站 POST，这里再加一层 Origin 校验。
+const SITE_ORIGIN = (process.env.SITE_ORIGIN || '').replace(/\/+$/, '');
+app.use((req, res, next) => {
+  if (['GET', 'HEAD', 'OPTIONS'].includes(req.method)) return next();
+  if (!SITE_ORIGIN) return next();
+  let origin = req.headers.origin;
+  if (!origin && req.headers.referer) {
+    try {
+      origin = new URL(req.headers.referer).origin;
+    } catch {
+      origin = '';
+    }
+  }
+  if (origin && origin !== SITE_ORIGIN) {
+    return res.status(403).json({ error: '非法来源' });
+  }
+  next();
+});
+
 app.use(express.json({ limit: '32kb' }));
 
 const GLOBAL_REQ_PER_MIN = parseInt(process.env.GLOBAL_REQ_PER_MIN, 10) || 60;
@@ -102,7 +128,8 @@ const PORT = parseInt(process.env.PORT || '8000', 10);
 setInterval(async () => {
   try {
     await db.query(`DELETE FROM codes WHERE expires_at < now() - interval '1 day'`);
-    await db.query(`DELETE FROM refresh_tokens WHERE expires_at < now() - interval '1 day'`);
+    const expiredSessions = await session.cleanupExpired();
+    if (expiredSessions) console.log(`[cleanup] 清理过期会话 ${expiredSessions} 个`);
     // 清理 24 小时仍未完成邮箱验证的 pending 用户（僵尸注册）
     // email_verified=TRUE 的真·待审用户不在删除范围；无邮箱验证的注册在 INSERT 时即置 true，同样不受影响
     await db.query(`
@@ -121,8 +148,8 @@ setInterval(async () => {
 
 async function main() {
   if (!process.env.DATABASE_URL) throw new Error('缺少 DATABASE_URL 环境变量');
-  if (!process.env.JWT_SECRET || process.env.JWT_SECRET.startsWith('CHANGE_ME')) {
-    throw new Error('请先设置 JWT_SECRET（可用 openssl rand -hex 32 生成）');
+  if (!process.env.OIDC_COOKIE_SECRET && !process.env.JWT_SECRET) {
+    throw new Error('请设置 OIDC_COOKIE_SECRET（openssl rand -hex 32）');
   }
   await db.initDb(process.env.DATABASE_URL);
   await db.initSchema();

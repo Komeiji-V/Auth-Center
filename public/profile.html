@@ -119,48 +119,15 @@
 
 <script src="/site.js"></script>
 <script>
-const REFRESH_KEY = 'auth_refresh_token';
-const TOKEN_KEY = 'auth_access_token';
-let token = null;
 let user = null;
-
-(function () {
-  const q = new URLSearchParams(location.search);
-  const t = q.get('token');
-  if (t) {
-    localStorage.setItem(TOKEN_KEY, t);
-    q.delete('token');
-    const clean = location.pathname + (q.toString() ? '?' + q.toString() : '');
-    history.replaceState(null, '', clean);
-  }
-})();
-
-async function ensureToken() {
-  let t = localStorage.getItem(TOKEN_KEY) || sessionStorage.getItem('admin_token') || '';
-  if (t) return t;
-  const rt = localStorage.getItem(REFRESH_KEY) || sessionStorage.getItem('admin_refresh') || '';
-  if (!rt) return null;
-  try {
-    const r = await fetch('/api/refresh', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ refresh_token: rt }),
-    });
-    const d = await r.json();
-    if (r.ok && d.token) {
-      localStorage.setItem(TOKEN_KEY, d.token);
-      localStorage.setItem(REFRESH_KEY, d.refresh_token);
-      return d.token;
-    }
-  } catch (e) {}
-  return null;
-}
 
 function api(path, options = {}) {
   const headers = { 'Content-Type': 'application/json' };
-  if (token) headers['Authorization'] = 'Bearer ' + token;
   return fetch(path, { ...options, headers }).then(async (r) => {
     const data = await r.json().catch(() => ({}));
+    if (r.status === 401) {
+      showLoginNeeded();
+    }
     return { status: r.status, data };
   });
 }
@@ -177,16 +144,11 @@ function escapeHtml(s) {
 }
 
 async function init() {
-  token = await ensureToken();
-  if (!token) return showLoginNeeded();
   const { status, data } = await api('/api/userinfo');
-  if (status !== 200) {
-    localStorage.removeItem(TOKEN_KEY);
-    token = null;
-    return showLoginNeeded();
-  }
+  if (status !== 200) return showLoginNeeded();
   user = data;
   document.getElementById('main').classList.add('show');
+  document.getElementById('loginNeeded').style.display = 'none';
   document.getElementById('userInfo').innerHTML =
     '用户名：<b>' + escapeHtml(user.username) + '</b><br>邮箱：' + escapeHtml(user.email) + '<br>角色：' + (user.role === 'admin' ? '管理员' : '普通用户');
   if (user.role === 'admin') document.getElementById('adminLink').style.display = 'inline';
@@ -199,16 +161,16 @@ function showLoginNeeded() {
 }
 
 document.getElementById('goLogin').addEventListener('click', () => {
-  localStorage.setItem(REFRESH_KEY, '');
-  location.href = '/login?redirect=' + encodeURIComponent(location.href);
+  location.href = '/login?redirect=' + encodeURIComponent(location.pathname);
 });
 
-document.getElementById('logout').addEventListener('click', (e) => {
+document.getElementById('logout').addEventListener('click', async (e) => {
   e.preventDefault();
-  localStorage.removeItem(TOKEN_KEY);
-  localStorage.removeItem(REFRESH_KEY);
+  try { await fetch('/api/logout', { method: 'POST' }); } catch {}
   location.href = '/login';
 });
+
+init();
 
 document.getElementById('saveUsername').addEventListener('click', async () => {
   const username = document.getElementById('newUsername').value.trim();
@@ -227,8 +189,8 @@ document.getElementById('savePassword').addEventListener('click', async () => {
   if (status === 200) {
     document.getElementById('oldPassword').value = '';
     document.getElementById('newPassword').value = '';
-    localStorage.removeItem(TOKEN_KEY);
-    localStorage.removeItem(REFRESH_KEY);
+    // 改密后该用户所有会话失效，1.5 秒后跳登录
+    setTimeout(() => { location.href = '/login?redirect=' + encodeURIComponent('/profile'); }, 1500);
   }
 });
 
@@ -250,8 +212,8 @@ document.getElementById('confirmEmail').addEventListener('click', async () => {
   const { status, data } = await api('/api/profile/email/verify', { method: 'POST', body: JSON.stringify({ new_email, code }) });
   msg('msgEmail', status === 200 ? data.message || '已更新' : data.error, status === 200 ? 'ok' : 'err');
   if (status === 200) {
-    localStorage.removeItem(TOKEN_KEY);
-    localStorage.removeItem(REFRESH_KEY);
+    // 改邮箱后所有会话失效，稍后跳登录
+    setTimeout(() => { location.href = '/login?redirect=' + encodeURIComponent('/profile'); }, 1500);
   }
 });
 

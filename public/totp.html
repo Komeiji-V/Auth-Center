@@ -84,37 +84,14 @@ function msg(text, cls) {
 
 function api(path, options = {}) {
   const headers = { 'Content-Type': 'application/json' };
-  if (token) headers['Authorization'] = 'Bearer ' + token;
   return fetch(path, { ...options, headers }).then(async (r) => {
     const data = await r.json().catch(() => ({}));
     return { status: r.status, data };
   });
 }
 
-async function ensureToken() {
-  let t = localStorage.getItem(TOKEN_KEY) || sessionStorage.getItem('admin_token') || '';
-  if (t) return t;
-  const rt = localStorage.getItem(REFRESH_KEY) || sessionStorage.getItem('admin_refresh') || '';
-  if (!rt) return null;
-  try {
-    const r = await fetch('/api/refresh', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ refresh_token: rt }),
-    });
-    const d = await r.json();
-    if (r.ok && d.token) {
-      localStorage.setItem(TOKEN_KEY, d.token);
-      localStorage.setItem(REFRESH_KEY, d.refresh_token);
-      return d.token;
-    }
-  } catch (e) {}
-  return null;
-}
-
 document.getElementById('goLogin').addEventListener('click', () => {
-  localStorage.setItem(REFRESH_KEY, '');
-  location.href = '/login?redirect=' + encodeURIComponent(location.href);
+  location.href = '/login?redirect=' + encodeURIComponent(location.pathname);
 });
 
 document.getElementById('confirm').addEventListener('click', async () => {
@@ -134,14 +111,8 @@ document.getElementById('confirm').addEventListener('click', async () => {
 });
 
 (async () => {
-  token = await ensureToken();
-  if (!token) {
-    document.getElementById('needLogin').style.display = 'block';
-    return;
-  }
   const me = await api('/api/userinfo');
   if (me.status !== 200) {
-    localStorage.removeItem(TOKEN_KEY);
     document.getElementById('needLogin').style.display = 'block';
     return;
   }

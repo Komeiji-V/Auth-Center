@@ -8,8 +8,5 @@ auth.example.com {
 	}
 }
 
-# 演示小站（以后你的真实小站照此模式加一条）
-game1.example.com {
-	encode zstd gzip
-	reverse_proxy demo-app:8001
-}
+# 小站（RP）走标准 OIDC，不再由本项目反代
+# 每个小站单独部署，只需在 .env 的 OIDC_CLIENTS 里登记 client

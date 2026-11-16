@@ -1,13 +1,13 @@
 const express = require('express');
 const crypto = require('crypto');
-const jwt = require('jsonwebtoken');
 const QRCode = require('qrcode');
 const { authenticator } = require('otplib');
 
 const db = require('./db');
 const mail = require('./mail');
+const session = require('./session');
 const { loginAttempt, loginSuccess, ipRateLimit } = require('./rateLimit');
-const { createAuthMiddleware } = require('./middleware');
+const { createSessionAuth } = require('./middleware');
 
 const router = express.Router();
 
@@ -54,38 +54,6 @@ function emailBlocked(email) {
 
 function normalizeAccount(account) {
   return account.trim().toLowerCase();
-}
-
-function signToken(user) {
-  return jwt.sign(
-    { uid: user.id, role: user.role, ver: user.token_version || 0 },
-    process.env.JWT_SECRET,
-    { expiresIn: process.env.JWT_EXPIRES || '1h', algorithm: 'HS256' }
-  );
-}
-
-function tokenExpiresIn(token) {
-  const d = jwt.decode(token);
-  return d && d.exp ? d.exp - d.iat : 3600;
-}
-
-function genRefreshToken() {
-  return crypto.randomBytes(48).toString('base64url');
-}
-
-function hashRefresh(token) {
-  return crypto.createHash('sha256').update(token).digest('hex');
-}
-
-async function issueTokens(user) {
-  const token = signToken(user);
-  const refreshToken = genRefreshToken();
-  await db.query(
-    `INSERT INTO refresh_tokens (user_id, token_hash, expires_at)
-     VALUES ($1, $2, now() + interval '${REFRESH_TTL_DAYS} days')`,
-    [user.id, hashRefresh(refreshToken)]
-  );
-  return { token, refresh_token: refreshToken, expires_in: tokenExpiresIn(token) };
 }
 
 async function issueCode(email, purpose, ip) {
@@ -411,14 +379,11 @@ router.post('/login', async (req, res) => {
     }
 
     loginSuccess(lockKey);
-    const tokens = await issueTokens(u);
+    await session.createSession(res, u.id);
     const needTotpSetup = u.role === 'admin' && !u.totp_enabled && process.env.ADMIN_TOTP_REQUIRED === 'true';
     db.audit(u.username, 'login_success', ip, '');
     res.json({
       ok: true,
-      token: tokens.token,
-      refresh_token: tokens.refresh_token,
-      expires_in: tokens.expires_in,
       user: {
         id: u.id, username: u.username, email: u.email,
         role: u.role, status: u.status, is_owner: u.is_owner,
@@ -431,46 +396,19 @@ router.post('/login', async (req, res) => {
   }
 });
 
-// ---- 刷新令牌：轮换制，封禁/审核状态即时失效 ----
-router.post('/refresh', async (req, res) => {
+// ---- 登出：销毁服务端会话 ----
+router.post('/logout', async (req, res) => {
   try {
-    const { refresh_token } = req.body || {};
-    if (!refresh_token) return res.status(400).json({ error: '缺少刷新令牌' });
-
-    // 先按 hash 精确查找（含已吊销），以检测重放攻击
-    const { rows } = await db.query(
-      `SELECT rt.id, rt.user_id, rt.revoked, rt.expires_at, u.username, u.role, u.status, u.token_version
-       FROM refresh_tokens rt JOIN users u ON u.id = rt.user_id
-       WHERE rt.token_hash = $1`,
-      [hashRefresh(refresh_token)]
-    );
-    if (rows.length === 0) return res.status(401).json({ error: '刷新令牌无效或已过期，请重新登录' });
-
-    const rt = rows[0];
-    // 已吊销的 token 再次使用：仅拒绝（不吊销全家，避免被用作强制登出 DoS）
-    if (rt.revoked) {
-      return res.status(401).json({ error: '刷新令牌无效或已过期，请重新登录' });
-    }
-    if (new Date(rt.expires_at) <= new Date()) {
-      return res.status(401).json({ error: '刷新令牌无效或已过期，请重新登录' });
-    }
-    if (rt.status === 'pending') return res.status(403).json({ error: '账号待审核，请等待管理员通过' });
-    if (rt.status === 'banned') return res.status(403).json({ error: '账号已被封禁' });
-
-    // 轮换：吊销旧 refresh，签发新的一对（携带当前 token_version，防止换出的 access 立即失效）
-    await db.query('UPDATE refresh_tokens SET revoked = TRUE WHERE id = $1', [rt.id]);
-    const tokens = await issueTokens({
-      id: rt.user_id, username: rt.username, role: rt.role, token_version: rt.token_version || 0,
-    });
-    res.json({ ok: true, ...tokens });
+    await session.destroySession(req, res);
+    res.json({ ok: true });
   } catch (e) {
-    console.error('[refresh] error:', e);
+    console.error('[logout] error:', e);
     res.status(500).json({ error: '服务器内部错误' });
   }
 });
 
-// ---- 用户信息（各小站校验身份用）----
-router.get('/userinfo', createAuthMiddleware(process.env.JWT_SECRET, db), (req, res) => {
+// ---- 用户信息（当前会话）----
+router.get('/userinfo', createSessionAuth(), (req, res) => {
   res.json({
     id: req.user.id,
     username: req.user.username,
@@ -505,7 +443,7 @@ router.get('/config', async (req, res) => {
 });
 
 // ===================== 个人中心 =====================
-const profileAuth = createAuthMiddleware(process.env.JWT_SECRET, db);
+const profileAuth = createSessionAuth();
 
 // ---- 修改用户名 ----
 router.post('/profile/username', profileAuth, async (req, res) => {
@@ -540,8 +478,8 @@ router.post('/profile/password', profileAuth, async (req, res) => {
       return res.status(400).json({ error: '旧密码错误' });
     }
     const newHash = await hashPassword(new_password);
-    await db.query('UPDATE users SET password_hash = $1, token_version = token_version + 1 WHERE id = $2', [newHash, req.user.id]);
-    await db.query('UPDATE refresh_tokens SET revoked = TRUE WHERE user_id = $1', [req.user.id]);
+    await db.query('UPDATE users SET password_hash = $1 WHERE id = $2', [newHash, req.user.id]);
+    await session.destroyUserSessions(req.user.id);
     db.audit(req.user.username, 'profile_password_change', req.ip, '');
     res.json({ ok: true, message: '密码已修改，其他设备需重新登录' });
   } catch (e) {
@@ -590,8 +528,8 @@ router.post('/profile/email/verify', profileAuth, async (req, res) => {
     const normEmail = normalizeAccount(new_email);
     const r = await consumeCode(normEmail, code, 'change_email');
     if (r.error) return res.status(400).json({ error: r.error });
-    await db.query('UPDATE users SET email = $1, email_verified = TRUE, token_version = token_version + 1 WHERE id = $2', [normEmail, req.user.id]);
-    await db.query('UPDATE refresh_tokens SET revoked = TRUE WHERE user_id = $1', [req.user.id]);
+    await db.query('UPDATE users SET email = $1, email_verified = TRUE WHERE id = $2', [normEmail, req.user.id]);
+    await session.destroyUserSessions(req.user.id);
     db.audit(req.user.username, 'profile_email_change', req.ip, `to=${normEmail}`);
     res.json({ ok: true, message: '邮箱已更新' });
   } catch (e) {
@@ -756,8 +694,8 @@ router.post('/reset-password', async (req, res) => {
     if (r.error) return res.status(400).json({ error: r.error });
 
     const newHash = await hashPassword(new_password);
-    await db.query('UPDATE users SET password_hash = $1, token_version = token_version + 1 WHERE id = $2', [newHash, u.id]);
-    await db.query('UPDATE refresh_tokens SET revoked = TRUE WHERE user_id = $1', [u.id]);
+    await db.query('UPDATE users SET password_hash = $1 WHERE id = $2', [newHash, u.id]);
+    await session.destroyUserSessions(u.id);
     db.audit(u.username, 'reset_password', req.ip, '');
     res.json({ ok: true, message: '密码已重置，请重新登录' });
   } catch (e) {
