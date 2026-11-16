@@ -3,6 +3,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Provider } from 'oidc-provider';
 import db from '../db.js';
+import cookieConfig from '../cookie-config.js';
 import PostgresAdapter from './adapter.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -103,14 +104,10 @@ export function createProvider() {
 
     cookies: {
       keys: [process.env.OIDC_COOKIE_SECRET],
-      // session cookie 的 path 是 /，可以吃 __Host- 前缀（防 cookie tossing）；
-      // _interaction / _interaction_resume 的 path 是子路径，不能用该前缀，保持原名。
-      names: {
-        session: process.env.OIDC_COOKIE_SECURE === 'true' ? '__Host-_session' : '_session',
-      },
-      // 生产必须为 true（HTTPS）；本地 http 调试按 OIDC_COOKIE_SECURE 放行
-      short: { secure: process.env.OIDC_COOKIE_SECURE === 'true' },
-      long: { secure: process.env.OIDC_COOKIE_SECURE === 'true' },
+      // 命名与 Secure 统一来自 cookie-config.js，避免与本站会话 cookie 判断不一致
+      names: { session: cookieConfig.PROVIDER_SESSION_COOKIE },
+      short: { secure: cookieConfig.SECURE },
+      long: { secure: cookieConfig.SECURE },
     },
 
     pkce: { required: () => true },

@@ -186,6 +186,15 @@ async function main() {
   await db.initSchema();
   mail.initMail();
 
+  // cookie 的两个 Secure 开关若显式配得不一致，帮助排查「一部分 cookie 带 Secure、一部分不带」
+  if (
+    process.env.COOKIE_SECURE !== undefined &&
+    process.env.OIDC_COOKIE_SECURE !== undefined &&
+    process.env.COOKIE_SECURE !== process.env.OIDC_COOKIE_SECURE
+  ) {
+    console.warn('[security] COOKIE_SECURE 与 OIDC_COOKIE_SECURE 不一致，已按「任一为 true」处理');
+  }
+
   // CSRF 校验依赖 SITE_ORIGIN；缺失时中间件会整体跳过，等于关掉这一层
   if (!SITE_ORIGIN) {
     const detail = 'SITE_ORIGIN 未配置：CSRF Origin 校验已关闭（跨站写请求不会被拒绝）';

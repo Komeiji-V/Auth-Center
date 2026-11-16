@@ -12,13 +12,7 @@ const db = require('./db');
 
 const TTL_DAYS = parseInt(process.env.SESSION_TTL_DAYS, 10) || 7;
 const IDLE_HOURS = parseInt(process.env.SESSION_IDLE_HOURS, 10) || 24;
-const SECURE =
-  process.env.COOKIE_SECURE === 'true' ||
-  (process.env.SITE_ORIGIN || '').startsWith('https://');
-
-// __Host- 前缀强制要求 Secure + Path=/ + 无 Domain，浏览器会拒绝同域小站
-// 塞进来的同名 Domain cookie（cookie tossing）。本地 http 不满足条件，退回普通名字。
-const COOKIE_NAME = SECURE ? '__Host-ac_sid' : 'ac_sid';
+const { SECURE, SESSION_COOKIE: COOKIE_NAME } = require('./cookie-config');
 
 function cookieOptions() {
   return {

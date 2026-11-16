@@ -414,9 +414,9 @@ router.post('/logout', async (req, res) => {
     await session.destroySession(req, res);
     // 同时撤销 OIDC 侧：否则 provider 的 _session cookie 还在，小站会被静默重新登录
     if (s) await revokeOidc(req, s.id);
-    const provSession = process.env.OIDC_COOKIE_SECURE === 'true' ? '__Host-_session' : '_session';
-    res.clearCookie(provSession, { path: '/' });
-    res.clearCookie(`${provSession}.sig`, { path: '/' });
+    const { PROVIDER_SESSION_COOKIE } = require('./cookie-config');
+    res.clearCookie(PROVIDER_SESSION_COOKIE, { path: '/' });
+    res.clearCookie(`${PROVIDER_SESSION_COOKIE}.sig`, { path: '/' });
     res.json({ ok: true });
   } catch (e) {
     console.error('[logout] error:', e);
