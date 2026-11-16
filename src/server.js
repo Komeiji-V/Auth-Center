@@ -172,6 +172,16 @@ async function main() {
   await db.initSchema();
   mail.initMail();
 
+  // CSRF 校验依赖 SITE_ORIGIN；缺失时中间件会整体跳过，等于关掉这一层
+  if (!SITE_ORIGIN) {
+    const detail = 'SITE_ORIGIN 未配置：CSRF Origin 校验已关闭（跨站写请求不会被拒绝）';
+    if (process.env.NODE_ENV === 'production') {
+      console.error(`[security] ${detail}。生产环境必须配置，如 SITE_ORIGIN=https://auth.example.com`);
+    } else {
+      console.log(`[security] ${detail}（仅本地开发可接受）`);
+    }
+  }
+
   // OIDC：复用现有 users 表；旧的 /api/login 保留，过渡期双轨运行
   if (process.env.OIDC_ENABLED === 'true') {
     const { createOidc } = await import('./oidc/bootstrap.mjs');
