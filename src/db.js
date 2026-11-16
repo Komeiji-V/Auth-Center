@@ -133,6 +133,40 @@ async function initSchema() {
     )
   `);
 
+  // ===== OIDC（oidc-provider）持久化 =====
+  // Session / Grant / AccessToken / RefreshToken / AuthorizationCode / Interaction / ReplayDetection
+  await query(`
+    CREATE TABLE IF NOT EXISTS oidc_payloads (
+      id          TEXT PRIMARY KEY,
+      type        TEXT NOT NULL,
+      payload     JSONB NOT NULL,
+      grant_id    TEXT,
+      user_code   TEXT,
+      uid         TEXT,
+      expires_at  TIMESTAMPTZ,
+      consumed_at TIMESTAMPTZ
+    )
+  `);
+  await query('CREATE INDEX IF NOT EXISTS idx_oidc_payloads_grant ON oidc_payloads (grant_id)');
+  await query('CREATE INDEX IF NOT EXISTS idx_oidc_payloads_uid   ON oidc_payloads (uid)');
+  await query('CREATE INDEX IF NOT EXISTS idx_oidc_payloads_exp   ON oidc_payloads (expires_at)');
+  await query('CREATE INDEX IF NOT EXISTS idx_oidc_payloads_ucode ON oidc_payloads (user_code)');
+
+  // back-channel logout 失败重试队列
+  await query(`
+    CREATE TABLE IF NOT EXISTS backchannel_retry (
+      id         SERIAL PRIMARY KEY,
+      client_id  TEXT NOT NULL,
+      sub        TEXT NOT NULL,
+      sid        TEXT,
+      attempts   INTEGER NOT NULL DEFAULT 0,
+      next_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+      last_error TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+  `);
+  await query('CREATE INDEX IF NOT EXISTS idx_backchannel_retry_next ON backchannel_retry (next_at)');
+
   // 注册模式从旧的单值(registration_mode)迁移为三个独立开关
   const { rows: oldMode } = await query(`SELECT key FROM config WHERE key = 'registration_mode'`);
   if (oldMode.length > 0) {

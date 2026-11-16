@@ -16,6 +16,21 @@ function validId(v) {
   return Number.isInteger(id) ? id : null;
 }
 
+/**
+ * 封禁 / 删除账号时，主动通知所有小站清除该用户的会话（Back-Channel Logout）。
+ * OIDC 未启用时静默跳过；通知失败会进重试队列，不阻塞管理操作。
+ */
+async function kickIfEnabled(req, userId) {
+  const oidc = req.app.locals && req.app.locals.oidc;
+  if (!oidc) return;
+  try {
+    const r = await oidc.kickAccount(userId);
+    if (r.sessions) console.log(`[admin] kick sub=${userId} sessions=${r.sessions}`);
+  } catch (e) {
+    console.error('[admin] kick failed:', e.message);
+  }
+}
+
 async function loadUser(id) {
   const { rows } = await db.query(
     'SELECT id, username, email, status, role, is_owner, invite_code_used, apply_info, totp_enabled, totp_secret FROM users WHERE id = $1',
@@ -89,6 +104,8 @@ router.post('/users/:id/reject', ...adminGuard, async (req, res) => {
     if (u.status === 'banned') return res.status(400).json({ error: '用户已被封禁，请使用封禁/删除流程' });
 
     const email = u.email;
+    // 删除记录前先清掉该用户在小站的所有会话
+    await kickIfEnabled(req, id);
     await db.query('DELETE FROM users WHERE id = $1', [id]);
     await db.query('DELETE FROM codes WHERE LOWER(email) = $1', [email]);
     if (u.invite_code_used) {
@@ -145,6 +162,8 @@ router.post('/users/:id/ban', ...adminGuard, async (req, res) => {
       [id]
     );
     await db.query('UPDATE refresh_tokens SET revoked = TRUE WHERE user_id = $1', [id]);
+    // 通知小站清掉该用户的会话（封禁后下次授权也会被 findAccount 拒绝）
+    await kickIfEnabled(req, id);
     db.audit(req.user.username, 'user_ban', req.ip, `target=${u.username}`);
     mail.sendNotify(u.email, 'banned').catch((e) => console.error('[notify] banned failed:', e.message));
     res.json({ ok: true, user: { id: u.id, username: u.username, email: u.email, status: 'banned' } });

@@ -54,6 +54,19 @@ app.use((req, res, next) => {
 // 未配置白名单时不发 CORS 头（浏览器跨域默认拦截），显式收紧
 app.use(cors({ origin: origins.length ? origins : false, credentials: true }));
 
+// ===== OIDC =====
+// 必须在 express.json 之前挂载：oidc-provider 需要读取原始请求体，
+// 一旦被 body parser 消费，token / interaction 等端点会拿不到表单数据。
+let oidc = null;
+const OIDC_PATHS = ['/auth', '/token', '/jwks', '/me', '/session', '/interaction', '/.well-known', '/oidc-debug'];
+app.use((req, res, next) => {
+  if (!oidc) return next();
+  const p = req.path;
+  const hit = OIDC_PATHS.some((prefix) => p === prefix || p.startsWith(`${prefix}/`));
+  if (hit) return oidc.callback(req, res);
+  next();
+});
+
 app.use(express.json({ limit: '32kb' }));
 
 const GLOBAL_REQ_PER_MIN = parseInt(process.env.GLOBAL_REQ_PER_MIN, 10) || 60;
@@ -114,6 +127,18 @@ async function main() {
   await db.initDb(process.env.DATABASE_URL);
   await db.initSchema();
   mail.initMail();
+
+  // OIDC：复用现有 users 表；旧的 /api/login 保留，过渡期双轨运行
+  if (process.env.OIDC_ENABLED === 'true') {
+    const { createOidc } = await import('./oidc/bootstrap.mjs');
+    oidc = await createOidc();
+    app.locals.oidc = oidc;
+    console.log(`[oidc] issuer    = ${oidc.issuer}`);
+    console.log(`[oidc] discovery = ${oidc.issuer}/.well-known/openid-configuration`);
+  } else {
+    console.log('[oidc] 未启用（设置 OIDC_ENABLED=true 开启）');
+  }
+
   app.listen(PORT, () => {
     console.log(`[server] auth center listening on :${PORT}`);
   });
