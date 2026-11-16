@@ -95,6 +95,20 @@
 
 **错误**：400（格式/邀请码/重复/黑名单/申请说明）；429（发码限流）。
 
+**未完成注册的续期**：
+
+同一邮箱若已存在一条「`pending` 且 `email_verified=false`」的记录，再次提交不会返回「已被注册」，而是校验后重发验证码：
+
+| 条件 | 响应 |
+|---|---|
+| 密码正确 + 用户名一致 | `{ ok: true, needs_verify: true, message: "检测到未完成的注册，验证码已重新发送" }`——**不新增用户、不消耗新 id** |
+| 密码错误 | 400 `该邮箱有未完成的注册，请使用原密码继续` |
+| 密码正确但用户名不同 | 400 `该邮箱有未完成的注册（用户名 xxx），请使用原用户名继续` |
+| 该邮箱记录已 `active` / `banned` | 400 `用户名或邮箱已被注册` |
+
+- 续期与首次注册**共用同一发码限流桶**（`REG_CODE_PER_HOUR`）
+- 仅当邮箱完全一致时才走续期，用户名匹配但邮箱不同不触发
+
 > 首个注册用户自动成为 owner（超级管理员，跳过审核）。并发注册由 advisory lock 串行化，邀请码占用为原子条件更新（防超用）。
 
 ## POST /api/verify-email
@@ -270,7 +284,7 @@ Refresh Token 轮换：换发新 access + 新 refresh（旧 refresh 作废）。
 
 用户列表（默认 pending，最多 200 条）。
 
-**响应**：`{ users: [{ id, username, email, status, role, is_owner, invite_code_used, apply_info, created_at, approved_at, banned_at }] }`
+**响应**：`{ users: [{ id, username, email, status, role, is_owner, invite_code_used, apply_info, created_at, approved_at, banned_at, email_verified }] }`
 
 ## POST /api/admin/users/:id/approve
 
@@ -373,6 +387,21 @@ Refresh Token 轮换：换发新 access + 新 refresh（旧 refresh 作废）。
 | 开 | 关 | 开 | 邀请码 → pending |
 | 开 | 开 | 关 | 邀请码 → 发码 → 验证 → active |
 | 开 | 开 | 开 | 邀请码 → 发码 → 验证 → pending |
+
+## email_verified 与两种 pending
+
+`users.email_verified` 用于区分 pending 的两种含义：
+
+| status | email_verified | 含义 | 清理策略 |
+|---|---|---|---|
+| pending | `false` | 注册卡在邮箱验证（僵尸） | 定时任务删除 24 小时前的记录 |
+| pending | `true` | 邮箱环节已完成，等待人工审核 | 永久保留 |
+| active | `true` | 正常账号 | — |
+| banned | `true` | 封禁账号 | — |
+
+- `email_verify_required=false` 时，注册在 INSERT 时即写入 `email_verified=true`（邮箱环节视为免检），避免被清理任务误删真·待审用户
+- `verify-email` 成功、`profile/email/verify` 改邮箱成功后均置 `true`
+- 历史数据在首次添加该列时回填：`active` / `banned` 一律置 `true`
 
 ## 账号状态与登录
 

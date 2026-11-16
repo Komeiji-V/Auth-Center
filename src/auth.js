@@ -176,10 +176,43 @@ router.post('/register', async (req, res) => {
     }
 
     const { rows: dup } = await db.query(
-      'SELECT username, email FROM users WHERE LOWER(username) = $1 OR LOWER(email) = $2',
+      'SELECT id, username, email, password_hash, status, email_verified FROM users WHERE LOWER(username) = $1 OR LOWER(email) = $2',
       [username.trim().toLowerCase(), normEmail]
     );
-    if (dup.length > 0) return res.status(400).json({ error: '用户名或邮箱已被注册' });
+    if (dup.length > 0) {
+      const e = dup[0];
+      // 未完成的注册（pending + 邮箱未验证）：允许用原密码续期重发验证码，避免用户被永久卡死
+      // 仅当邮箱完全一致时允许续期，防止用他人用户名探测接口
+      if (e.email.toLowerCase() === normEmail && e.status === 'pending' && !e.email_verified) {
+        if (!(await verifyPassword(password, e.password_hash))) {
+          return res.status(400).json({ error: '该邮箱有未完成的注册，请使用原密码继续' });
+        }
+        // 用户名必须与原记录一致：否则用户会误以为改名成功，实际沿用旧名
+        if (e.username.toLowerCase() !== username.trim().toLowerCase()) {
+          return res.status(400).json({ error: `该邮箱有未完成的注册（用户名 ${e.username}），请使用原用户名继续` });
+        }
+        // 与首次注册共用同一发码限流桶，防止绕过限流
+        if (!ipRateLimit(`reg-code:${ip}`, 60 * 60 * 1000, REG_CODE_PER_HOUR)) {
+          return res.status(429).json({ error: '发送太频繁，请 1 小时后再试' });
+        }
+        const code = await issueCode(normEmail, 'register', ip);
+        try {
+          const sent = await mail.sendCode(normEmail, code, 'register');
+          db.audit(e.username, 'register_resume', ip, '');
+          return res.json({
+            ok: true,
+            needs_verify: true,
+            message: '检测到未完成的注册，验证码已重新发送',
+            ...(sent.debug ? { debug_code: sent.code } : {}),
+          });
+        } catch (err) {
+          await db.query('DELETE FROM codes WHERE LOWER(email) = $1 AND purpose = $2', [normEmail, 'register']);
+          console.error('[register] resume send failed, rollback codes:', err.message);
+          return res.status(502).json({ error: '邮件发送失败，请稍后再试或联系管理员' });
+        }
+      }
+      return res.status(400).json({ error: '用户名或邮箱已被注册' });
+    }
 
     if (flags.email_verify_required && !ipRateLimit(`reg-code:${ip}`, 60 * 60 * 1000, REG_CODE_PER_HOUR)) {
       return res.status(429).json({ error: '发送太频繁，请 1 小时后再试' });
@@ -195,10 +228,12 @@ router.post('/register', async (req, res) => {
         const first = cnt[0].c === 0;
         const pwdHash = await hashPassword(password);
         await client.query(
-          `INSERT INTO users (username, email, password_hash, status, role, invite_code_used, apply_info, is_owner)
-           VALUES ($1, $2, $3, 'pending', $4, $5, $6, $7)`,
+          `INSERT INTO users (username, email, password_hash, status, role, invite_code_used, apply_info, is_owner, email_verified)
+           VALUES ($1, $2, $3, 'pending', $4, $5, $6, $7, $8)`,
           [username.trim(), normEmail, pwdHash, first ? 'admin' : 'user', usedInvite,
-            apply_info ? String(apply_info).trim() : null, first]
+            apply_info ? String(apply_info).trim() : null, first,
+            // 不需要邮箱验证时直接视为「邮箱环节已通过」，否则僵尸清理会误删真·待审用户
+            !flags.email_verify_required]
         );
         if (usedInvite) {
           // 原子条件占用：防止并发超用（max_uses=0 表示不限次）
@@ -301,7 +336,7 @@ router.post('/verify-email', async (req, res) => {
     // 管理员（首位用户）不参与审核，直接激活
     const status = flags.review_required && uRows[0].role !== 'admin' ? 'pending' : 'active';
     const { rows: updated } = await db.query(
-      'UPDATE users SET status = $1 WHERE LOWER(email) = $2 AND status = $3 RETURNING id, username, role',
+      'UPDATE users SET status = $1, email_verified = TRUE WHERE LOWER(email) = $2 AND status = $3 RETURNING id, username, role',
       [status, normEmail, 'pending']
     );
     if (updated.length === 0) return res.status(400).json({ error: '账号不存在或状态异常' });
@@ -555,7 +590,7 @@ router.post('/profile/email/verify', profileAuth, async (req, res) => {
     const normEmail = normalizeAccount(new_email);
     const r = await consumeCode(normEmail, code, 'change_email');
     if (r.error) return res.status(400).json({ error: r.error });
-    await db.query('UPDATE users SET email = $1, token_version = token_version + 1 WHERE id = $2', [normEmail, req.user.id]);
+    await db.query('UPDATE users SET email = $1, email_verified = TRUE, token_version = token_version + 1 WHERE id = $2', [normEmail, req.user.id]);
     await db.query('UPDATE refresh_tokens SET revoked = TRUE WHERE user_id = $1', [req.user.id]);
     db.audit(req.user.username, 'profile_email_change', req.ip, `to=${normEmail}`);
     res.json({ ok: true, message: '邮箱已更新' });

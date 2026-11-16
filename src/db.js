@@ -44,6 +44,7 @@ async function initSchema() {
       apply_info TEXT,
       is_owner BOOLEAN NOT NULL DEFAULT FALSE,
       token_version INTEGER NOT NULL DEFAULT 0,
+      email_verified BOOLEAN NOT NULL DEFAULT FALSE,
       created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
       approved_at TIMESTAMPTZ,
       banned_at TIMESTAMPTZ
@@ -53,6 +54,18 @@ async function initSchema() {
   await query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS apply_info TEXT`);
   await query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS is_owner BOOLEAN NOT NULL DEFAULT FALSE`);
   await query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS token_version INTEGER NOT NULL DEFAULT 0`);
+  // email_verified：首次引入该列时补列并回填历史数据
+  // 回填策略：active/banned 视为已验证（旧库无此字段，无法追溯真实验证状态）
+  // 用 information_schema 判定「列是否存在」，只在首次添加时回填，
+  // 避免日后每次启动把「管理端直接激活」的账号也刷成 true
+  const { rows: evCol } = await query(
+    `SELECT 1 FROM information_schema.columns WHERE table_name = 'users' AND column_name = 'email_verified'`
+  );
+  if (evCol.length === 0) {
+    await query(`ALTER TABLE users ADD COLUMN email_verified BOOLEAN NOT NULL DEFAULT FALSE`);
+    await query(`UPDATE users SET email_verified = TRUE WHERE status IN ('active', 'banned')`);
+    console.log('[db] migration: users.email_verified 已添加并回填');
+  }
   await query(`
     CREATE TABLE IF NOT EXISTS codes (
       id SERIAL PRIMARY KEY,

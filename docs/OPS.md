@@ -135,8 +135,59 @@ SELECT ip, COUNT(*) FROM audit_log WHERE action = 'login_fail' GROUP BY ip ORDER
 每日自动执行（服务启动后 24h 间隔）：
 - 过期验证码（1 天前）
 - 所有过期 refresh token（1 天前，含未吊销）
+- **24 小时仍未完成邮箱验证的 pending 用户**（`email_verified = FALSE`；已通过邮箱验证、等待人工审核的用户不受影响）
 - 90 天前审计日志
 - 90 天前邀请码使用记录
+
+### 用户 id 分配与释放规则
+
+`users.id` 由 PostgreSQL 序列 `users_id_seq` 分配。理解以下三点可避免误操作。
+
+**增加 id 的唯一入口**
+
+只有 `POST /api/register` 执行到 `INSERT INTO users` 时才会消耗一个 id。以下情况**都会**消耗，即使记录最终不存在：
+
+| 场景 | 记录去向 | id 回收 |
+|---|---|---|
+| 注册成功（active / pending） | 保留 | 否 |
+| 邀请码并发超用（事务回滚） | 不存在 | 否 |
+| 发邮件失败（提交后删除） | 不存在 | 否 |
+| 用户长期不验证邮箱（被清理任务删） | 不存在 | 否 |
+| 管理员审核拒绝（删除记录） | 不存在 | 否 |
+
+**不消耗 id 的操作**
+
+登录、刷新 token、改密码 / 邮箱、TOTP 操作、封禁 / 解封、审核通过、生成邀请码，以及注册查重命中后的「续期重发验证码」——均不产生新用户。
+
+**id 永不释放**
+
+- `DELETE` 只删行，序列不动
+- 事务 `ROLLBACK` 不退号（`nextval` 非事务性）
+- `TRUNCATE` 默认不重置序列
+
+实测行为：
+
+```text
+① 连续注册 3 人       → 1,2,3
+② 删除 id=2 后再注册  → 4（不是 2）
+③ 事务回滚后再注册    → 6（5 被消耗）
+④ TRUNCATE 后再注册   → 7（序列未重置）
+```
+
+**唯一的重置方式**
+
+```sql
+ALTER SEQUENCE users_id_seq RESTART WITH 5140001;   -- 切换 id 起点（一次性）
+TRUNCATE users RESTART IDENTITY;                     -- ⚠️ 见下方警告
+```
+
+> ⚠️ **生产环境禁止 `TRUNCATE users RESTART IDENTITY`**。
+> id 一旦被复用，`sub` 会跟着复用（`sub = String(id)`），小站按 `sub` 存的用户数据会串号——新用户可能直接看到旧用户的数据。
+> 日常清理一律用 `DELETE`，绝不加 `RESTART IDENTITY`。
+
+**序列表不保证严格连续**
+
+数据库崩溃恢复、`setval`、极高并发都可能跳号。`id` 仅作标识，不要假设连续。
 
 ### 邀请码使用记录
 

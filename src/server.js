@@ -90,6 +90,14 @@ setInterval(async () => {
   try {
     await db.query(`DELETE FROM codes WHERE expires_at < now() - interval '1 day'`);
     await db.query(`DELETE FROM refresh_tokens WHERE expires_at < now() - interval '1 day'`);
+    // 清理 24 小时仍未完成邮箱验证的 pending 用户（僵尸注册）
+    // email_verified=TRUE 的真·待审用户不在删除范围；无邮箱验证的注册在 INSERT 时即置 true，同样不受影响
+    await db.query(`
+      DELETE FROM users
+      WHERE status = 'pending'
+        AND email_verified = FALSE
+        AND created_at < now() - interval '24 hours'
+    `);
     await db.query(`DELETE FROM audit_log WHERE created_at < now() - interval '90 days'`);
     await db.query(`DELETE FROM invite_usage_log WHERE created_at < now() - interval '90 days'`);
     console.log('[cleanup] 定时清理完成');

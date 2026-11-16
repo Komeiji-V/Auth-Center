@@ -43,7 +43,7 @@ router.get('/users', ...adminGuard, async (req, res) => {
       params.push(status);
     }
     const { rows } = await db.query(
-      `SELECT id, username, email, status, role, is_owner, invite_code_used, apply_info, created_at, approved_at, banned_at
+      `SELECT id, username, email, status, role, is_owner, invite_code_used, apply_info, created_at, approved_at, banned_at, email_verified
        FROM users ${where} ORDER BY id DESC LIMIT 200`,
       params
     );
