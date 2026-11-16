@@ -7,7 +7,7 @@
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { font-family: system-ui, sans-serif; background: #f5f6f8; color: #222; }
-  .wrap { max-width: 980px; margin: 40px auto; padding: 0 16px; }
+  .wrap { max-width: 1440px; margin: 40px auto; padding: 0 16px; }
   .card { background: #fff; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,.08); padding: 20px; margin-bottom: 20px; }
   h1 { font-size: 20px; margin-bottom: 16px; }
   h2 { font-size: 15px; margin-bottom: 12px; }
@@ -23,11 +23,11 @@
   .teal { background: linear-gradient(135deg, #0d9488, #14b8a6); } .teal:hover { filter: brightness(0.92); background: linear-gradient(135deg, #0d9488, #14b8a6); }
   .msg { margin: 10px 0; font-size: 13px; }
   .err { color: #d33; } .ok { color: #2a8a3f; }
-  table { width: 100%; table-layout: fixed; min-width: 1300px; border-collapse: collapse; font-size: 13px; }
+  table { width: 100%; table-layout: fixed; min-width: 1340px; border-collapse: collapse; font-size: 13px; }
   th, td { text-align: left; padding: 9px 8px; border-bottom: 1px solid #eee; white-space: nowrap; vertical-align: middle; }
   th { color: #666; font-weight: 600; white-space: nowrap; }
   /* 用户列表列宽（仅作用于用户管理表格） */
-  .user-table th:nth-child(1) { width: 52px; }
+  .user-table th:nth-child(1) { width: 80px; }
   .user-table th:nth-child(2) { width: 15%; }
   .user-table th:nth-child(3) { width: 23%; }
   .user-table th:nth-child(4) { width: 90px; }
@@ -593,7 +593,9 @@ async function initFromSession() {
   const d = await r.json().catch(() => ({}));
   if (d.role !== 'admin') return;
   currentUser = d;
-  if (q.get('setup') === '1' || !d.totp_enabled) {
+  // 是否强制绑 TOTP 由后端 ADMIN_TOTP_REQUIRED 决定（未绑时管理接口会 403），
+  // 前端不再无条件跳转
+  if (q.get('setup') === '1') {
     location.replace('/totp?redirect=' + encodeURIComponent(location.origin + '/admin'));
     return;
   }
