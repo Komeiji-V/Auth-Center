@@ -150,7 +150,10 @@ async function init() {
   document.getElementById('main').classList.add('show');
   document.getElementById('loginNeeded').style.display = 'none';
   document.getElementById('userInfo').innerHTML =
-    '用户名：<b>' + escapeHtml(user.username) + '</b><br>邮箱：' + escapeHtml(user.email) + '<br>角色：' + (user.role === 'admin' ? '管理员' : '普通用户');
+    'ID：<b>' + escapeHtml(String(user.id)) + '</b><br>' +
+    '用户名：<b>' + escapeHtml(user.username) + '</b><br>' +
+    '邮箱：' + escapeHtml(user.email) + '<br>' +
+    '角色：' + (user.role === 'admin' ? '管理员' : '普通用户');
   if (user.role === 'admin') document.getElementById('adminLink').style.display = 'inline';
   renderTotp();
 }

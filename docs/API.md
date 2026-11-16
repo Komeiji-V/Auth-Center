@@ -280,9 +280,16 @@ Refresh Token 轮换：换发新 access + 新 refresh（旧 refresh 作废）。
 > 目标为**管理员或 owner** 的操作（ban/unban/unlock/edit/set-admin/reset-totp/reject）**仅 owner** 可执行，非 owner 返回 403。
 > owner 不可被封禁、不可被取消管理员。
 
-## GET /api/admin/users?status=pending|active|banned|all
+## GET /api/admin/users?status=pending|active|banned|all&q=<关键词>
 
 用户列表（默认 pending，最多 200 条）。
+
+| 参数 | 说明 |
+|---|---|
+| `status` | `pending` / `active` / `banned` / `all` |
+| `q` | 可选。纯数字时按 ID 精确匹配；同时按用户名 / 邮箱模糊匹配（不区分大小写，最长 50 字） |
+
+`q` 里的 `%` 和 `_` 已做转义，不会被当作 LIKE 通配符。
 
 **响应**：`{ users: [{ id, username, email, status, role, is_owner, invite_code_used, apply_info, created_at, approved_at, banned_at, email_verified }] }`
 

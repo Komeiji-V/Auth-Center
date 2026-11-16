@@ -52,12 +52,33 @@ function canManageUser(actor, target) {
 router.get('/users', ...adminGuard, async (req, res) => {
   try {
     const status = req.query.status || 'pending';
+    // 搜索：ID 精确匹配 + 用户名/邮箱模糊匹配
+    const q = String(req.query.q || '').trim().slice(0, 50);
+    const conds = [];
     const params = [];
-    let where = '';
+
     if (status !== 'all') {
-      where = 'WHERE status = $1';
       params.push(status);
+      conds.push(`status = $${params.length}`);
     }
+
+    if (q) {
+      // 转义 LIKE 通配符，避免用户输入 % 或 _ 匹配全部
+      const like = `%${q.toLowerCase().replace(/[\\%_]/g, '\\$&')}%`;
+      params.push(like);
+      const idx = params.length;
+      const ors = [
+        `LOWER(username) LIKE $${idx} ESCAPE '\\'`,
+        `LOWER(email) LIKE $${idx} ESCAPE '\\'`,
+      ];
+      if (/^\d+$/.test(q)) {
+        params.push(parseInt(q, 10));
+        ors.push(`id = $${params.length}`);
+      }
+      conds.push(`(${ors.join(' OR ')})`);
+    }
+
+    const where = conds.length ? `WHERE ${conds.join(' AND ')}` : '';
     const { rows } = await db.query(
       `SELECT id, username, email, status, role, is_owner, invite_code_used, apply_info, created_at, approved_at, banned_at, email_verified
        FROM users ${where} ORDER BY id DESC LIMIT 200`,
