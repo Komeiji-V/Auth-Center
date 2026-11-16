@@ -58,9 +58,10 @@ docker compose logs -f auth   # 确认正常后按部署验证清单抽查
 ### token 反复失效（401 登录已过期）
 
 可能原因：
-1. 用户最近改过密码/邮箱/被重置密码（token 版本号机制）——预期行为，重新登录
-2. `JWT_SECRET` 与小站不一致——两边统一
-3. access 过期但 refresh 也被吊销（改密）——需重新登录（无法静默续期）
+1. 用户最近改过密码 / 邮箱 / 被重置密码 —— 预期行为（该用户全部会话已被删除），重新登录即可
+2. 浏览器禁用了 cookie，或 `SITE_ORIGIN` 配错导致请求被 CSRF 校验拒绝（403）
+3. 会话超过 `SESSION_TTL_DAYS`（默认 7 天）
+4. OIDC 场景下小站报 `issuer mismatch` —— `OIDC_ISSUER` 与实际访问地址不一致
 
 ### 限流误触发
 
@@ -75,23 +76,28 @@ docker compose logs -f auth   # 确认正常后按部署验证清单抽查
 
 ## 三、安全维护
 
-### JWT_SECRET 轮换（全端登出）
+### 会话与密钥轮换
 
-```bash
-# 1. 生成新密钥
-openssl rand -hex 32
+**强制所有人重新登录**：
 
-# 2. 改 .env 的 JWT_SECRET
-
-# 3. 吊销全部 refresh token（防止旧 refresh 换新 access）
-docker exec <pg容器> psql -U postgres -d auth_db -c "UPDATE refresh_tokens SET revoked = TRUE;"
-
-# 4. 重启（token_version 不变，仅 access 需等过期；如需立即全端登出，可全局 +1：
-#    UPDATE users SET token_version = token_version + 1;）
-docker compose restart auth
+```sql
+DELETE FROM sessions;
 ```
 
-> 注意：改 JWT_SECRET 后，**所有小站必须同步更新**（它们校验 access 用同一密钥）。
+**只让某个用户下线**：
+
+```sql
+DELETE FROM sessions WHERE user_id = <id>;
+```
+
+**轮换 OIDC 签名密钥**（会让已签发的 ID Token 失效）：
+
+1. 保留旧 key，把新 key 追加进 `keys/jwks.json` 的 `keys` 数组
+2. 重启服务（新旧 key 都在，验签不受影响）
+3. 等最长 token 寿命（15 分钟 ~ 14 天）过去后，再移除旧 key
+
+> 改 `OIDC_COOKIE_SECRET` 会让所有 OIDC 会话 cookie 失效，小站用户需重新授权。
+> `.env` 里没有 `JWT_SECRET` 了——JWT 已完全移除。
 
 ### SMTP 授权码更换
 

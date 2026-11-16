@@ -20,9 +20,11 @@ function loadJwks() {
 function loadClients() {
   const raw = process.env.OIDC_CLIENTS;
   if (!raw) throw new Error('缺少环境变量 OIDC_CLIENTS（JSON 数组）');
+  // 兼容两种加载方式：dotenv 会去掉外层引号，docker --env-file / compose env_file 不会
+  const text = raw.trim().replace(/^(['"])([\s\S]*)\1$/, '$2');
   let list;
   try {
-    list = JSON.parse(raw);
+    list = JSON.parse(text);
   } catch (e) {
     throw new Error(`OIDC_CLIENTS 不是合法 JSON: ${e.message}`);
   }

@@ -59,15 +59,32 @@ nano .env
 | `SITE_TITLE` | 站点名（登录页标题/浏览器标题） |
 | `SITE_ICON` / `SITE_BG` / `SITE_BG_REGISTER` | 图标与背景图 URL（可空；背景可填随机图 API） |
 | `DATABASE_URL` | PG 连接串，如 `postgres://auth_user:密码@127.0.0.1:5432/auth_db`（不同机用内网 IP） |
-| `JWT_SECRET` | **必须生成强随机值**：`openssl rand -hex 32` |
+| `OIDC_COOKIE_SECRET` | **必须生成强随机值**：`openssl rand -hex 32`（OIDC 会话 cookie 签名） |
 | `SMTP_DEBUG` | **生产必须 `false`** |
 | `SMTP_HOST/PORT/SECURE` | 如 `smtp.komeijiv.cn / 587 / false`（587 用 STARTTLS）。应用层强制 `requireTLS`：587 场景服务器不支持 STARTTLS 将报错不发信（绝不降级明文） |
 | `SMTP_USER/PASS/FROM` | SMTP 账号（建议更换授权码）与发件人 |
 | `BLOCKED_EMAIL_DOMAINS` | 垃圾邮箱黑名单（可空） |
 | `REG_CODE_PER_HOUR` / `PROFILE_CODE_PER_HOUR` / `GLOBAL_REQ_PER_MIN` | 限流阈值（默认 3 / 5 / 60） |
 | `TRUST_PROXY_CIDRS` | 信任代理网段（默认覆盖 Docker 网段；见反代方案） |
-| `CORS_ORIGINS` | **所有小站域名，登录后回跳白名单来源**，逗号分隔；同时是 CORS 白名单与 CSP `connect-src`（登录页跨域 POST `/api/auth/sso` 依赖） |
-| `ADMIN_TOTP_REQUIRED` | `true` |
+| `SITE_ORIGIN` | **本站完整地址**，如 `https://auth.example.com`。用于 CSRF 的 Origin 校验，**不配会导致校验被跳过** |
+| `COOKIE_SECURE` | 生产 **必须 `true`**（HTTPS 下 cookie 才加 Secure） |
+| `SESSION_TTL_DAYS` | 会话有效期，默认 `7` |
+| `OIDC_ENABLED` | `true` 开启 OIDC；关闭则只有会话登录，小站无法接入 |
+| `OIDC_ISSUER` | **与真实访问地址完全一致**，如 `https://auth.example.com`（不一致会导致 token 校验失败） |
+| `OIDC_COOKIE_SECURE` | 生产 `true` |
+| `OIDC_CLIENTS` | 小站注册表（JSON 数组），见下方 |
+| `OIDC_DEBUG_KICK` | 生产 **必须 `false`**（开启会暴露 `/oidc-debug/kick/:sub`） |
+| `CORS_ORIGINS` | 需要跨域访问本站 API 的来源（多数情况下可留空，小站走 OIDC 不需要） |
+| `ADMIN_TOTP_REQUIRED` | `true`（管理员必须绑 TOTP 才能用管理接口） |
+
+**小站注册表**（每个小站一个 client，不要共用）：
+
+```bash
+OIDC_CLIENTS='[{"client_id":"music","client_secret":"openssl rand -hex 32","redirect_uris":["https://music.example.com/auth/callback"],"backchannel_logout_uri":"https://music.example.com/auth/backchannel-logout"}]'
+```
+
+> `redirect_uris` 必须精确匹配，不支持通配符。注意 Docker 的 `--env-file` / compose `env_file`
+> **不会去掉外层引号**（dotenv 会），代码已兼容两种方式，但建议保持单引号包裹。
 
 **注册模式**（.env 仅决定首次启动默认值，之后管理后台可热切换）：
 
@@ -127,6 +144,19 @@ server {
 > - `X-Forwarded-Proto` 只需设置一次
 > - nginx 与 auth 不在同一主机/网段时，需把 nginx 的 IP 加入 `TRUST_PROXY_CIDRS`
 
+## 六点五、生成签名密钥（OIDC 必需）
+
+OIDC 用 RS256 签名，私钥**不能打进镜像**，运行时挂载。
+
+```bash
+mkdir -p keys
+docker compose run --rm auth node scripts/gen-keys.mjs
+```
+
+输出会打印 `kid`。`keys/` 已在 `.gitignore` 和 `.dockerignore` 中忽略。
+
+> 多实例部署时多个容器共用同一份密钥；**不要**各自生成，否则互相验签失败。
+
 ## 七、启动
 
 ```bash
@@ -149,20 +179,32 @@ docker compose logs -f auth   # 出现 "[server] auth center listening on :8000"
 - [ ] SMTP 加密链路：`openssl s_client -starttls smtp -connect <smtp_host>:587` 确认服务器支持 STARTTLS（应用已强制 requireTLS，不支持则发信会报错）
 - [ ] 找回密码流程（含 TOTP 双因素）
 - [ ] TOTP 扫码绑定 → 登录强制输码
-- [ ] `CORS_ORIGINS` 内的小站能登录回跳（小站已实现 `POST /api/auth/sso` 时：登录页跨域 POST 成功、回跳 URL **不含 token**、小站前端从 cookie 收到 token）；未配域名回跳被拒
-- [ ] 登录页响应头 CSP `connect-src` 含全部白名单小站（`CORS_ORIGINS` 动态注入）
 - [ ] 非 owner 后台仅"用户管理"；owner 可生成邀请码/切换模式
-- [ ] `ss -tlnp` 确认 8000/8001 只监听 127.0.0.1
+- [ ] `ss -tlnp` 确认 8000 只监听 127.0.0.1
 - [ ] `nmap -p 8000 你的VPS` 为 filtered/closed（80/443 开放）
 - [ ] 错密码 5 次锁定、连发请求 429（限流生效）
-- [ ] 改密码后旧 token 立即失效（token 版本号生效）
+- [ ] 改密码后**所有设备会话立即失效**（服务端会话删除）
+
+**OIDC 相关**：
+
+- [ ] `curl https://auth.你的域名/.well-known/openid-configuration` 的 `issuer` 与 `OIDC_ISSUER` 完全一致
+- [ ] `curl https://auth.你的域名/jwks` 返回 `kid` 与生成时一致
+- [ ] 小站登录走通：授权码 → token → ID Token 的 `sub` 为 7 位数字
+- [ ] 管理后台封禁该用户 → 小站会话**立即失效**
+- [ ] `COOKIE_SECURE=true` 时响应头 `Set-Cookie` 含 `Secure; HttpOnly; SameSite=Lax`
+- [ ] 跨站 POST 被拒（CSRF Origin 校验生效）：从其他域提交登录请求返回 403
 
 ## 十、常见部署问题
 
 | 问题 | 处理 |
 |---|---|
-| 登录后不回跳小站 | `CORS_ORIGINS` 未包含该小站域名 |
-| 登录后提示"目标站暂不支持安全回跳" | 小站未实现 `POST /api/auth/sso`（安全降级，token 不再走 URL，需升级小站） |
+| 小站报 `issuer mismatch` | `OIDC_ISSUER` 与实际访问地址不一致（含协议、端口） |
+| 小站报 `invalid_client` | `OIDC_CLIENTS` 里没有该 client，或 secret 不一致 |
+| 小站报 `redirect_uri_mismatch` | `redirect_uris` 必须与请求里的完全一致（含结尾斜杠） |
+| 登录成功但小站拿不到 refresh token | 请求未带 `scope=offline_access` 或 `prompt=consent` |
+| 封禁后小站仍能访问 | 小站未实现 `/backchannel-logout`；最坏等 access token 过期（15 分钟） |
+| 所有 POST 返回 403 | `SITE_ORIGIN` 配错（与实际访问的 origin 不一致） |
+| 容器启动报 `OIDC_CLIENTS 不是合法 JSON` | 环境变量引号问题，见第二节说明 |
 | 收不到验证码邮件 | `docker compose logs auth` 查 SMTP 报错；确认 587 出站端口未被云厂商封 |
 | 注册提示"邮箱域名不允许" | `BLOCKED_EMAIL_DOMAINS` 误配 |
 | 修改站点标题/背景 | 改 `.env` → `docker compose restart auth` |

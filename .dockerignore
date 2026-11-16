@@ -4,3 +4,8 @@ node_modules
 .git
 caddy_data
 caddy_config
+keys
+test/browser/shots
+test/browser/chrome-profile*
+test/browser/tmp
+.env.*

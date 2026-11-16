@@ -42,7 +42,7 @@
 - **信任代理**：`TRUST_PROXY_CIDRS` 可配置（默认 loopback + Docker 网段），反代须覆写/追加 XFF（openresty 配置已按此部署）
 - **注册状态机**：三开关（邀请码/邮箱验证/人工审核）任意组合；首个注册用户自动成为 owner（跳过审核）
 - **安全演进**（三轮独立审查累计修复 27+ 项）：XFF 伪造、邀请码并发超用、TOTP 覆写/爆破、找回密码枚举、密码 oracle（统一错误消息）、验证码原子占用、限流内存膨胀等均已修复并复测
-- **安全演进（M1）**：access token 不再经 URL query 回跳小站（浏览器历史/两端 access log 会留存明文 token）——改为登录页跨域 POST 到小站 `/api/auth/sso`，小站验签后以短时 cookie 交还前端；认证中心 CSP `connect-src` 随 `CORS_ORIGINS` 白名单动态放行（解析经 URL 规范化+格式校验，防指令注入）；sso 端点双重 CSRF 防护（Origin/Referer 白名单 + 自定义头强制 preflight）；旧小站未升级时安全降级（提示且不跳转，绝不回退 URL 带 token）。详见 `docs/API.md`「小站安全回跳协议（SSO）」与 `docs/REPORT-M1-sso-token-redirect.md`
+- **安全演进（M1，已被 OIDC 取代）**：access token 不再经 URL query 回跳小站（浏览器历史/两端 access log 会留存明文 token）——改为登录页跨域 POST 到小站 `/api/auth/sso`，小站验签后以短时 cookie 交还前端；认证中心 CSP `connect-src` 随 `CORS_ORIGINS` 白名单动态放行（解析经 URL 规范化+格式校验，防指令注入）；sso 端点双重 CSRF 防护（Origin/Referer 白名单 + 自定义头强制 preflight）；旧小站未升级时安全降级（提示且不跳转，绝不回退 URL 带 token）。详见 `docs/API.md`「小站安全回跳协议（SSO）」与 `docs/REPORT-M1-sso-token-redirect.md`
 - **SMTP 强制 STARTTLS**：`mail.js` 启用 nodemailer `requireTLS`——587（secure=false）场景服务器必须支持 STARTTLS，否则报错不发信，杜绝"服务器不通告 STARTTLS 就静默降级明文"（STARTTLS 剥离攻击面）；465（secure=true）隐式 TLS 不受影响
 
 ## 五、已知事项与待办

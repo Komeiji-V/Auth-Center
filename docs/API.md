@@ -5,7 +5,7 @@
 ## 通用约定
 
 - **Base URL**：`https://auth.你的域名`（本地开发 `http://localhost:8000`）
-- **认证方式**：`Authorization: Bearer <access_token>`
+- **认证方式**：会话 cookie（`ac_sid`，登录后由服务端下发）
 - **请求体**：JSON（`Content-Type: application/json`），单请求上限 32KB
 - **响应格式**：
   - 成功：`{ ok: true, ...字段 }`
@@ -16,19 +16,20 @@
 |---|---|
 | 200 | 成功 |
 | 400 | 参数错误 / 业务拒绝（含统一文案的防枚举场景） |
-| 401 | 未登录 / token 过期或版本不符 |
+| 401 | 未登录 / 会话已过期或被撤销 |
 | 403 | 无权限 / 账号 pending/banned / 管理员未绑 TOTP |
 | 404 | 接口不存在 |
 | 429 | 限流（登录锁定 / 发码频率 / 全局限流） |
 | 502 | 邮件发送失败 |
 | 500 | 服务端错误 |
 
-## JWT 说明
+## 会话说明
 
-- **算法**：HS256，密钥 `JWT_SECRET`，有效期 `JWT_EXPIRES`（默认 1h）
-- **Payload**：`{ uid: 用户ID, role: 'admin'|'user', ver: token_version, iat, exp }`
-- **token 版本号（ver）**：改密码 / 重置密码 / 改邮箱（自助或管理员操作）后 `token_version` 递增，**所有已签发 access token 立即失效**（中间件比对 `payload.ver` 与数据库 `token_version`）
-- **Refresh Token**：登录返回 `refresh_token`（30 天有效，数据库存 SHA-256 哈希，轮换制——每次使用换发新对，旧 refresh 作废）
+- **认证方式**：登录成功后服务端下发 `Set-Cookie: ac_sid=<随机值>`（`HttpOnly`、`SameSite=Lax`、`Secure` 按 `COOKIE_SECURE`），浏览器后续请求自动携带
+- **有效期**：`SESSION_TTL_DAYS`（默认 7 天）
+- **撤销**：会话存在 `sessions` 表，改密码 / 重置密码 / 改邮箱 / 封禁 / 删号会删除该用户全部会话，**立即失效**（不再有 token 版本号机制）
+- **CSRF**：写请求会校验 `Origin` / `Referer` 与 `SITE_ORIGIN` 一致，不一致返回 403；`SITE_ORIGIN` 未配置时跳过（仅限本地开发）
+- **小站接入**：不再使用本站的 JWT，改走 OIDC（见 `docs/OIDC.md` 与 `docs/GUIDE.md`）
 
 ## 限流阈值（默认，.env 可调）
 
@@ -123,7 +124,7 @@
 
 ## POST /api/login
 
-登录，返回 access + refresh。
+登录，建立服务端会话（下发 HttpOnly cookie）。
 
 **请求体**：
 
@@ -133,70 +134,32 @@
 | `password` | 是 | |
 | `totp_code` | 账号已绑定 TOTP 时 | 6 位验证码 |
 
-**成功响应**：
+**成功响应**（`Set-Cookie: ac_sid=...; HttpOnly; SameSite=Lax; Max-Age=604800`）：
 
 ```json
 {
   "ok": true,
-  "token": "<access_token>",
-  "refresh_token": "<refresh_token>",
-  "expires_in": 3600,
   "user": { "id": 1, "username": "...", "email": "...", "role": "admin", "status": "active", "is_owner": true },
   "need_totp_setup": false
 }
 ```
 
-- `need_totp_setup`：管理员未绑 TOTP 时为 true（`ADMIN_TOTP_REQUIRED=true` 时）
-- 管理员（role=admin）登录**必须**已绑定 TOTP 并提交 `totp_code`
+- `need_totp_setup`：管理员未绑 TOTP 时为 true（`ADMIN_TOTP_REQUIRED=true` 时），前端应引导去 `/totp`
+- `ADMIN_TOTP_REQUIRED=true` 时，未绑 TOTP 的管理员登录后调用管理接口会返回 403
 
 **错误**：
 - 401 `密码或 TOTP 验证码错误`——密码错 / TOTP 错 / 未提交 TOTP 码**返回完全一致消息**（防密码 oracle）
 - 403 `账号待审核` / `账号已被封禁`
 - 429 登录失败锁定（5 次/15 分钟）
 
-## POST /api/refresh
+## POST /api/logout
 
-Refresh Token 轮换：换发新 access + 新 refresh（旧 refresh 作废）。
+销毁当前会话并清除 cookie。
 
-**请求体**：`{ refresh_token }`
+**响应**：`{ ok: true }`
 
-**响应**：`{ ok: true, token, refresh_token, expires_in }`
-
-**错误**：401（无效/过期/已吊销）。已吊销 token 重放仅拒绝（不吊销其他会话）。
-
-## 小站安全回跳协议（SSO）
-
-> 安全演进（M1）：access token **不再通过 URL query 传递**（浏览器历史/两端 access log 会留存明文 token）。登录页在目标站位于 `redirect_origins` 白名单时，将 token **跨域 POST 到目标站 `/api/auth/sso`**，由小站后端验签后以短时 cookie 交还小站前端。
-
-**流程**：
-
-```
-小站未登录 → 跳 /login?redirect=<小站URL>
-  → 登录/静默续期成功
-  → 登录页 fetch POST <小站>/api/auth/sso { token }   （跨域，需 CORS + CSP connect-src）
-  → 小站后端验签（同 JWT_SECRET）→ 确认用户 active → 种 60s 短时 cookie
-  → 登录页跳转回小站 URL（不含 token）
-  → 小站前端从 cookie 收入 localStorage 并清除 cookie
-  → 后续请求照常带 Authorization: Bearer <token>
-```
-
-**小站端点（参考实现，见 demo-app/server.js）**：`POST /api/auth/sso`
-
-| 项 | 说明 |
-|---|---|
-| 请求体 | `{ token }`（access token） |
-| 来源校验（CSRF 防护） | ① `Origin` 必须命中认证中心 origin（无 Origin 时用 `Referer` 兜底，两者皆无 → 403）；② 必须携带自定义头 `X-Requested-With: AuthCenter`（跨站 `<form>` 无法携带，且强制浏览器 preflight） |
-| 校验 | `jwt.verify(token, JWT_SECRET, { algorithms: ['HS256'] })` + 用户存在且 `status='active'` |
-| 成功 | 200 `{ ok: true }` + `Set-Cookie`（短时 cookie，`httpOnly: false`，`SameSite=Lax`，`secure` 按生产 https 开启，60s 过期） |
-| 错误 | 400 缺少 token；401 token 无效；403 非法来源/用户不存在或未激活；429 超限流 |
-| 限流 | 必须配置（demo-app 参考实现为 30 次/分/IP） |
-
-**接入要求**：
-- 小站后端须持有与认证中心一致的 `JWT_SECRET`
-- 小站 CORS 须允许认证中心 origin（含 preflight，需放行 `Content-Type` 与 `X-Requested-With` 请求头，**并开启 `credentials`**）；认证中心 `CORS_ORIGINS` 已自动写入 CSP `connect-src`
-- 认证中心登录页的 sso fetch 使用 `credentials: 'include'`（跨域 fetch 默认不存储响应 Set-Cookie，必须显式 include 才能收到搬运 cookie）——小站 CORS 响应必须含 `Access-Control-Allow-Credentials: true`
-- 小站与认证中心同域（如 `music.komeijiv.cn` 与 `auth.komeijiv.cn`）时 `SameSite=Lax` 正常；若跨注册域，需 `SameSite=None; Secure` 并注意第三方 cookie 策略
-- 旧小站未实现 `/api/auth/sso` 时，登录页会提示"目标站不支持安全回跳"并**拒绝回退到 URL 带 token**（安全降级）
+> 小站不再通过本站 JWT 接入，旧的 `/api/refresh` 与「SSO 回跳协议」已移除。
+> 小站请使用标准 OIDC：`docs/GUIDE.md`，端点与配置见 `docs/OIDC.md`。
 
 ## POST /api/forgot-password
 
@@ -224,6 +187,8 @@ Refresh Token 轮换：换发新 access + 新 refresh（旧 refresh 作废）。
 # 二、登录态接口（需 `Authorization: Bearer`）
 
 ## GET /api/userinfo
+
+当前会话对应的用户信息（依赖 `ac_sid` cookie）。
 
 **响应**：
 
