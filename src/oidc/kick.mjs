@@ -52,3 +52,30 @@ export async function kickAccount(provider, accountId) {
 
   return { sessions, notified };
 }
+
+
+/**
+ * 彻底撤销某账号的 OIDC 凭据
+ *
+ * kickAccount 只发 back-channel 通知并销毁 Session，但 Grant / RefreshToken /
+ * AccessToken 仍留在库里：登出、改密、重置密码之后，小站手里的 refresh token
+ * 还能继续换新 access token（最长 14 天）；封禁解除后旧 token 甚至直接复活。
+ *
+ * 所以凡是要「收回访问权」的地方（登出 / 改密 / 重置 / 改邮箱 / 封禁 / 删号），
+ * 都应该调这个而不是 kickAccount。
+ */
+export async function revokeAccount(provider, accountId) {
+  const id = String(accountId);
+
+  const kicked = await kickAccount(provider, id);
+
+  const r = await db.query(
+    `DELETE FROM oidc_payloads
+      WHERE type IN ('Session', 'Grant', 'AccessToken', 'RefreshToken', 'AuthorizationCode')
+        AND payload->>'accountId' = $1`,
+    [id]
+  );
+
+  console.log(`[oidc revoke] sub=${id} 会话 ${kicked.sessions} 个，凭据 ${r.rowCount} 条`);
+  return { ...kicked, revoked: r.rowCount };
+}

@@ -9,7 +9,8 @@ function initMail() {
     return;
   }
   if (!process.env.SMTP_HOST) {
-    console.log('[mail] 未配置 SMTP_HOST，降级为调试模式');
+    // 不降级为调试模式：否则「SMTP 没配好」会变成「验证码直接出现在 HTTP 响应里」
+    console.error('[mail] 未配置 SMTP_HOST：验证码类接口会返回 502，不会静默降级');
     return;
   }
   transporter = nodemailer.createTransport({
@@ -28,7 +29,19 @@ function genCode() {
 }
 
 function isDebug() {
-  return process.env.SMTP_DEBUG === 'true' || !transporter;
+  if (process.env.SMTP_DEBUG === 'true') {
+    if (process.env.NODE_ENV === 'production') {
+      // 生产环境把验证码回显在响应里 = 任何人可接管任意非 TOTP 账号
+      throw new Error('SMTP_DEBUG 不允许在生产环境开启');
+    }
+    return true;
+  }
+  return false;
+}
+
+/** 真实发信前的最后一道闸：transporter 为空就抛错，让调用方走 502 而不是降级 */
+function requireTransport() {
+  if (!transporter) throw new Error('SMTP 未配置（检查 SMTP_HOST / SMTP_USER / SMTP_PASS）');
 }
 
 async function sendCode(email, code, purpose) {
@@ -36,6 +49,7 @@ async function sendCode(email, code, purpose) {
     console.log(`[mail:debug] ${purpose} code -> ${email}: ${code}`);
     return { debug: true, code };
   }
+  requireTransport();
   const subject = purpose === 'register' ? '【注册验证码】' : '【验证码】';
   await transporter.sendMail({
     from: process.env.SMTP_FROM,
@@ -68,6 +82,7 @@ function renderTemplate(text, extra) {
 }
 
 async function sendNotify(email, type, extra) {
+  if (!isDebug()) requireTransport();
   const t = notifyTemplates(type);
   if (!t) return;
   const text = renderTemplate(t.text, extra);

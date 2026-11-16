@@ -149,6 +149,18 @@ const redirect = q.get('redirect') || '';
   }).catch(() => {});
 })();
 
+// 只允许跳回本站路径：redirect.startsWith('/') 会放过 //evil.com（协议相对 URL）
+function safePath(p) {
+  if (!p) return null;
+  try {
+    const u = new URL(p, location.origin);
+    if (u.origin !== location.origin) return null;
+    return u.pathname + u.search + u.hash;
+  } catch {
+    return null;
+  }
+}
+
 function showMsg(html, cls) {
   const m = document.getElementById('msg');
   m.innerHTML = html;
@@ -161,7 +173,7 @@ async function autoEnter() {
     const r = await fetch('/api/userinfo');
     if (!r.ok) return false;
     const u = await r.json();
-    const target = redirect && redirect.startsWith('/') ? redirect : (u.role === 'admin' ? '/admin' : '/profile');
+    const target = safePath(redirect) || (u.role === 'admin' ? '/admin' : '/profile');
     location.href = target;
     return true;
   } catch {
@@ -201,9 +213,7 @@ document.getElementById('form').addEventListener('submit', async (e) => {
         encodeURIComponent('/admin') + '" style="color:#4a7cff;">前往绑定</a>', 'ok');
       return;
     }
-    const target = redirect && redirect.startsWith('/')
-      ? redirect
-      : (data.user.role === 'admin' ? '/admin' : '/profile');
+    const target = safePath(redirect) || (data.user.role === 'admin' ? '/admin' : '/profile');
     showMsg('登录成功，正在跳转…', 'ok');
     location.href = target;
   } catch (err) {

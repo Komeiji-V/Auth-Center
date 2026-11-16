@@ -18,15 +18,18 @@ function validId(v) {
 }
 
 /**
- * 封禁 / 删除账号时，主动通知所有小站清除该用户的会话（Back-Channel Logout）。
+ * 封禁 / 解封 / 删除账号时，撤销该用户在小站侧的全部凭据：
+ * back-channel logout 通知 + 删除 Session / Grant / RefreshToken。
  * OIDC 未启用时静默跳过；通知失败会进重试队列，不阻塞管理操作。
  */
 async function kickIfEnabled(req, userId) {
   const oidc = req.app.locals && req.app.locals.oidc;
   if (!oidc) return;
   try {
-    const r = await oidc.kickAccount(userId);
-    if (r.sessions) console.log(`[admin] kick sub=${userId} sessions=${r.sessions}`);
+    const r = await oidc.revokeAccount(userId);
+    if (r.sessions || r.revoked) {
+      console.log(`[admin] revoke sub=${userId} sessions=${r.sessions} tokens=${r.revoked}`);
+    }
   } catch (e) {
     console.error('[admin] kick failed:', e.message);
   }
@@ -123,6 +126,8 @@ router.post('/users/:id/reject', ...adminGuard, async (req, res) => {
     if (!canManageUser(req.user, u)) {
       return res.status(403).json({ error: '仅初始管理员（owner）可对管理员执行此操作' });
     }
+    // owner 只在「首个用户」时产生，删掉后系统永远没有 owner（配置/邀请码/设管理员全部失效）
+    if (u.is_owner) return res.status(403).json({ error: '不能删除初始管理员（owner）' });
     if (u.status === 'banned') return res.status(400).json({ error: '用户已被封禁，请使用封禁/删除流程' });
 
     const email = u.email;
@@ -213,6 +218,8 @@ router.post('/users/:id/unban', ...adminGuard, async (req, res) => {
       [id]
     );
     const u = rows[0];
+    // 解封时再清一次：封禁期间可能已积累旧的 refresh token，不清会导致解封后立刻复活
+    await kickIfEnabled(req, id);
     db.audit(req.user.username, 'user_unban', req.ip, `target=${u.username}`);
     mail.sendNotify(u.email, 'unbanned').catch((e) => console.error('[notify] unbanned failed:', e.message));
     res.json({ ok: true, user: u });
@@ -247,6 +254,10 @@ router.post('/users/:id/set-admin', ...adminGuard, async (req, res) => {
     const id = validId(req.params.id);
     if (!id) return res.status(400).json({ error: '参数错误' });
     const { is_admin } = req.body || {};
+    // 必须是布尔值：判定用 === true、赋值用真值时，传字符串 "true"/"false" 会绕过 owner-only 检查
+    if (typeof is_admin !== 'boolean') {
+      return res.status(400).json({ error: 'is_admin 必须为布尔值' });
+    }
     const u = await loadUser(id);
     if (!u) return res.status(400).json({ error: '用户不存在' });
     // 提升他人为管理员仅 owner 可执行；降级管理员维持 canManageUser 校验（目标为管理员时仅 owner）
@@ -306,9 +317,9 @@ router.post('/users/:id/edit', ...adminGuard, async (req, res) => {
       }
     }
     if (newUsername !== u.username || newEmail !== u.email) {
-      // 改邮箱与用户自助路径对齐：递增 token_version 使旧 access 立即失效（仅邮箱变化时）
+      // 改邮箱后清掉该用户全部会话（token_version 机制已随 JWT 移除）
       if (newEmail !== u.email) {
-        await db.query('UPDATE users SET username = $1, email = $2, token_version = token_version + 1 WHERE id = $3', [newUsername, newEmail, id]);
+        await db.query('UPDATE users SET username = $1, email = $2 WHERE id = $3', [newUsername, newEmail, id]);
       } else {
         await db.query('UPDATE users SET username = $1, email = $2 WHERE id = $3', [newUsername, newEmail, id]);
       }
@@ -376,6 +387,8 @@ router.post('/invite-codes', ...adminGuard, async (req, res) => {
 // ---- 邀请码列表及使用状态 ----
 router.get('/invite-codes', ...adminGuard, async (req, res) => {
   try {
+    // 与创建/删除保持一致：邀请码在邀请制下等于注册权限，不应对非 owner 暴露
+    if (!req.user.is_owner) return res.status(403).json({ error: '仅初始管理员（owner）可查看邀请码' });
     const { rows } = await db.query(
       `SELECT code, note, max_uses, used_count, expires_at, used_by, used_at, created_at
        FROM invite_codes ORDER BY id DESC LIMIT 200`

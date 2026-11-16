@@ -1,7 +1,6 @@
 require('dotenv').config();
 
 const express = require('express');
-const cors = require('cors');
 
 const cookieParser = require('cookie-parser');
 
@@ -54,8 +53,31 @@ app.use((req, res, next) => {
   next();
 });
 
-// 未配置白名单时不发 CORS 头（浏览器跨域默认拦截），显式收紧
-app.use(cors({ origin: origins.length ? origins : false, credentials: true }));
+// 说明：这里曾挂过全局带凭据 CORS（为旧的 /api/auth/sso 跨域回跳服务）。
+// 该端点已随 OIDC 迁移删除，继续保留会让白名单内的小站能带着管理员 cookie
+// 读取 /api/admin/* 的响应，故移除。OIDC 回调是顶层 302，不需要 CORS。
+// origins 仍用于 CSP connect-src 与 /api/config 的回跳白名单。
+
+// ===== 真实 IP =====
+// oidc-provider 是独立的 Koa app，不读 X-Forwarded-For，ctx.ip 会是反代地址。
+// 在这里把 Express（已配 trust proxy）算好的 IP 传给下游，供 interaction 的锁定 key 使用。
+app.use((req, res, next) => {
+  req.realIp = req.ip;
+  next();
+});
+
+// ===== 全局限流 =====
+// 必须在 OIDC 之前：否则 /auth /token /interaction 完全不受限，
+// 等于给撞库和密码喷洒留了无限次入口。
+const GLOBAL_REQ_PER_MIN = parseInt(process.env.GLOBAL_REQ_PER_MIN, 10) || 60;
+app.use((req, res, next) => {
+  // 发现文档与公钥豁免：健康检查、客户端拉公钥都会高频访问
+  if (req.path === '/jwks' || req.path.startsWith('/.well-known')) return next();
+  if (!ipRateLimit(req.ip, 60 * 1000, GLOBAL_REQ_PER_MIN)) {
+    return res.status(429).json({ error: '请求过于频繁' });
+  }
+  next();
+});
 
 // ===== OIDC =====
 // 必须在 express.json 之前挂载：oidc-provider 需要读取原始请求体，
@@ -94,14 +116,6 @@ app.use((req, res, next) => {
 });
 
 app.use(express.json({ limit: '32kb' }));
-
-const GLOBAL_REQ_PER_MIN = parseInt(process.env.GLOBAL_REQ_PER_MIN, 10) || 60;
-app.use((req, res, next) => {
-  if (!ipRateLimit(req.ip, 60 * 1000, GLOBAL_REQ_PER_MIN)) {
-    return res.status(429).json({ error: '请求过于频繁' });
-  }
-  next();
-});
 
 app.use('/api', authRouter);
 app.use('/api/admin', adminRouter);

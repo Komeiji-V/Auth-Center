@@ -399,7 +399,12 @@ router.post('/login', async (req, res) => {
 // ---- 登出：销毁服务端会话 ----
 router.post('/logout', async (req, res) => {
   try {
+    const s = await session.getSession(req);
     await session.destroySession(req, res);
+    // 同时撤销 OIDC 侧：否则 provider 的 _session cookie 还在，小站会被静默重新登录
+    if (s) await revokeOidc(req, s.id);
+    res.clearCookie('_session', { path: '/' });
+    res.clearCookie('_session.sig', { path: '/' });
     res.json({ ok: true });
   } catch (e) {
     console.error('[logout] error:', e);
@@ -445,6 +450,20 @@ router.get('/config', async (req, res) => {
 // ===================== 个人中心 =====================
 const profileAuth = createSessionAuth();
 
+/**
+ * 收回该账号在小站侧的访问权（OIDC 的 Session / Grant / RefreshToken）
+ * 只删本站 sessions 是不够的：小站手里的 refresh token 仍然有效。
+ */
+async function revokeOidc(req, userId) {
+  const oidc = req.app.locals && req.app.locals.oidc;
+  if (!oidc) return;
+  try {
+    await oidc.revokeAccount(userId);
+  } catch (e) {
+    console.error('[oidc revoke] failed:', e.message);
+  }
+}
+
 // ---- 修改用户名 ----
 router.post('/profile/username', profileAuth, async (req, res) => {
   try {
@@ -480,6 +499,7 @@ router.post('/profile/password', profileAuth, async (req, res) => {
     const newHash = await hashPassword(new_password);
     await db.query('UPDATE users SET password_hash = $1 WHERE id = $2', [newHash, req.user.id]);
     await session.destroyUserSessions(req.user.id);
+    await revokeOidc(req, req.user.id);
     db.audit(req.user.username, 'profile_password_change', req.ip, '');
     res.json({ ok: true, message: '密码已修改，其他设备需重新登录' });
   } catch (e) {
@@ -530,6 +550,7 @@ router.post('/profile/email/verify', profileAuth, async (req, res) => {
     if (r.error) return res.status(400).json({ error: r.error });
     await db.query('UPDATE users SET email = $1, email_verified = TRUE WHERE id = $2', [normEmail, req.user.id]);
     await session.destroyUserSessions(req.user.id);
+    await revokeOidc(req, req.user.id);
     db.audit(req.user.username, 'profile_email_change', req.ip, `to=${normEmail}`);
     res.json({ ok: true, message: '邮箱已更新' });
   } catch (e) {
@@ -696,6 +717,7 @@ router.post('/reset-password', async (req, res) => {
     const newHash = await hashPassword(new_password);
     await db.query('UPDATE users SET password_hash = $1 WHERE id = $2', [newHash, u.id]);
     await session.destroyUserSessions(u.id);
+    await revokeOidc(req, u.id);
     db.audit(u.username, 'reset_password', req.ip, '');
     res.json({ ok: true, message: '密码已重置，请重新登录' });
   } catch (e) {

@@ -96,7 +96,8 @@ async function handleLogin(provider, ctx, uid, body) {
   const username = (body.get('login') || '').trim();
   const password = body.get('password') || '';
   const totpCode = (body.get('totp') || '').trim();
-  const ip = ctx.ip || 'unknown';
+  // oidc-provider 不读 XFF，用 server.js 注入的真实 IP，否则锁定 key 的 IP 维度会是反代地址
+  const ip = (ctx.req && ctx.req.realIp) || ctx.ip || 'unknown';
 
   const fail = (msg, needTotp = false) => {
     ctx.type = 'html';

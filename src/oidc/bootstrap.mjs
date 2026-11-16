@@ -1,6 +1,6 @@
 import { createProvider } from './provider.mjs';
 import { interactionMiddleware } from './interaction.mjs';
-import { kickAccount } from './kick.mjs';
+import { kickAccount, revokeAccount } from './kick.mjs';
 import { startCleanup } from './cleanup.mjs';
 
 /**
@@ -47,5 +47,6 @@ export async function createOidc() {
     callback: provider.callback(),
     issuer: provider.issuer,
     kickAccount: (sub) => kickAccount(provider, sub),
+    revokeAccount: (sub) => revokeAccount(provider, sub),
   };
 }
