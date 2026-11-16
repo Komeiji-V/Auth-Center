@@ -124,23 +124,40 @@ app.use((err, req, res, next) => {
 
 const PORT = parseInt(process.env.PORT || '8000', 10);
 
-// 每日清理：过期验证码 / 所有过期 refresh token（含未吊销）/ 90 天前审计日志与邀请码使用记录
+// 每日清理：过期验证码 / 过期会话 / 僵尸注册 / 90 天前审计与邀请码记录
+// 多实例部署时用事务级 advisory lock 保证同一时刻只有一个实例执行（事务结束自动释放）
 setInterval(async () => {
   try {
-    await db.query(`DELETE FROM codes WHERE expires_at < now() - interval '1 day'`);
-    const expiredSessions = await session.cleanupExpired();
-    if (expiredSessions) console.log(`[cleanup] 清理过期会话 ${expiredSessions} 个`);
-    // 清理 24 小时仍未完成邮箱验证的 pending 用户（僵尸注册）
-    // email_verified=TRUE 的真·待审用户不在删除范围；无邮箱验证的注册在 INSERT 时即置 true，同样不受影响
-    await db.query(`
-      DELETE FROM users
-      WHERE status = 'pending'
-        AND email_verified = FALSE
-        AND created_at < now() - interval '24 hours'
-    `);
-    await db.query(`DELETE FROM audit_log WHERE created_at < now() - interval '90 days'`);
-    await db.query(`DELETE FROM invite_usage_log WHERE created_at < now() - interval '90 days'`);
-    console.log('[cleanup] 定时清理完成');
+    const result = await db.withTransaction(async (client) => {
+      const { rows } = await client.query('SELECT pg_try_advisory_xact_lock(9527) AS ok');
+      if (!rows[0].ok) return null;   // 别的实例正在清理
+
+      await client.query(`DELETE FROM codes WHERE expires_at < now() - interval '1 day'`);
+
+      const s = await client.query(
+        `DELETE FROM sessions WHERE expires_at < now() - interval '1 day'`
+      );
+
+      // 清理 24 小时仍未完成邮箱验证的 pending 用户（僵尸注册）
+      // email_verified=TRUE 的真·待审用户不在删除范围；无邮箱验证的注册在 INSERT 时即置 true，同样不受影响
+      await client.query(`
+        DELETE FROM users
+        WHERE status = 'pending'
+          AND email_verified = FALSE
+          AND created_at < now() - interval '24 hours'
+      `);
+
+      await client.query(`DELETE FROM audit_log WHERE created_at < now() - interval '90 days'`);
+      await client.query(`DELETE FROM invite_usage_log WHERE created_at < now() - interval '90 days'`);
+
+      return { sessions: s.rowCount };
+    });
+
+    if (result === null) {
+      console.log('[cleanup] 其他实例正在清理，跳过');
+    } else {
+      console.log(`[cleanup] 定时清理完成（过期会话 ${result.sessions} 个）`);
+    }
   } catch (e) {
     console.error('[cleanup] 失败:', e.message);
   }

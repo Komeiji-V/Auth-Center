@@ -206,7 +206,44 @@ SELECT * FROM invite_usage_log WHERE code = 'XXXX' ORDER BY id;
 - 清理已吊销的 refresh：`DELETE FROM refresh_tokens WHERE revoked = TRUE AND expires_at < now();`
 - 删除测试用户：`DELETE FROM users WHERE username LIKE 'test%';`（谨慎，先备份）
 
-## 五、速查表（API 方式运维）
+## 五、多实例部署
+
+个人项目**单实例就够**。确实需要多副本（负载均衡 / 滚动更新）时，注意以下几点。
+
+### 天然共享的部分
+
+| 数据 | 位置 | 说明 |
+|---|---|---|
+| 登录会话 | `sessions` 表 | 任意实例都能验，**不需要 sticky session** |
+| OIDC 会话 / token / 授权码 | `oidc_payloads` 表 | 同上 |
+| 用户、邀请码、验证码 | 各自的表 | 同上 |
+
+### 不共享、需要留意的部分
+
+| 项 | 影响 | 处理 |
+|---|---|---|
+| 登录失败计数、发码限流、全局限流 | 每个实例独立计数，总阈值 = 配置值 × 实例数 | 单机可接受；严格限流需换 Redis |
+| 每日清理任务 | 加了事务级 advisory lock，同一时刻只有一个实例执行 | 已处理 |
+| back-channel 失败重试 | 可能重复推送（幂等操作，无副作用） | 可接受 |
+| 进程内 interaction 失败计数 | 同限流 | 可接受 |
+
+### 必须满足
+
+1. **所有实例连同一个 PostgreSQL**（会话与 OIDC 状态都在库里）
+2. **共用同一份 `keys/jwks.json`** —— 各自生成会导致互相验签失败
+3. `OIDC_ISSUER` 配成对外统一域名，不要写各实例的地址
+4. 反代层开启会话保持不是必需的，但能减少重复验库
+
+### 限流的近似换算
+
+```bash
+# 3 个实例，希望全局 60 次/分 → 每个实例配 20
+GLOBAL_REQ_PER_MIN=20
+```
+
+幂等性说明：限流只是「更宽松」，不会误伤正常用户。
+
+## 六、速查表（API 方式运维）
 
 以下操作均可用 curl 完成（管理员需 TOTP，先登录拿 token）：
 
@@ -236,7 +273,7 @@ curl -X POST https://auth.你的域名/api/admin/invite-codes \
   -d '{"count":5,"max_uses":1,"expires_days":7,"note":"测试"}'
 ```
 
-## 六、测试约定（本地）
+## 七、测试约定（本地）
 
 - 测试脚本**存本地**（不进 GitHub，避免暴露测试密钥/本地环境依赖）
 - 参考写法：`C:\Users\KomeijiV\AppData\Local\Temp\opencode\test_fixes*.ps1`（`Req`/`Test` 函数）
