@@ -101,7 +101,12 @@ export function createProvider() {
 
     cookies: {
       keys: [process.env.OIDC_COOKIE_SECRET],
-      // 生产必须为 true（HTTPS）；本地 http 调试按 OIDC_INSECURE 放行
+      // session cookie 的 path 是 /，可以吃 __Host- 前缀（防 cookie tossing）；
+      // _interaction / _interaction_resume 的 path 是子路径，不能用该前缀，保持原名。
+      names: {
+        session: process.env.OIDC_COOKIE_SECURE === 'true' ? '__Host-_session' : '_session',
+      },
+      // 生产必须为 true（HTTPS）；本地 http 调试按 OIDC_COOKIE_SECURE 放行
       short: { secure: process.env.OIDC_COOKIE_SECURE === 'true' },
       long: { secure: process.env.OIDC_COOKIE_SECURE === 'true' },
     },

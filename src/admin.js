@@ -99,6 +99,15 @@ router.post('/users/:id/approve', ...adminGuard, async (req, res) => {
   try {
     const id = validId(req.params.id);
     if (!id) return res.status(400).json({ error: '参数错误' });
+    // 开启「邮箱验证 + 人工审核」时，未验证邮箱的 pending 用户不该被直接放行：
+    // 否则邮箱归属从未被证明，后续找回密码会把邮件发到一个未经验证的地址
+    const target = await loadUser(id);
+    if (!target) return res.status(400).json({ error: '用户不存在' });
+    if (target.status === 'banned') return res.status(400).json({ error: '用户已被封禁' });
+    if (!target.email_verified) {
+      return res.status(400).json({ error: '该用户尚未完成邮箱验证，无法通过审核' });
+    }
+
     const { rows } = await db.query(
       `UPDATE users SET status = 'active', approved_at = now(), banned_at = NULL
        WHERE id = $1 AND status <> 'banned'

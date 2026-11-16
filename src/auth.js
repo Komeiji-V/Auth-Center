@@ -194,6 +194,11 @@ router.post('/register', async (req, res) => {
         await client.query('SELECT pg_advisory_xact_lock($1)', [OWNER_LOCK_KEY]);
         const { rows: cnt } = await client.query('SELECT COUNT(*)::int AS c FROM users');
         const first = cnt[0].c === 0;
+        // 首个用户会成为 owner：配置了 OWNER_EMAIL 时只允许该邮箱注册，防止部署窗口被抢注
+        if (first) {
+          const ownerEmail = (process.env.OWNER_EMAIL || '').trim().toLowerCase();
+          if (ownerEmail && normEmail !== ownerEmail) throw new Error('OWNER_EMAIL_MISMATCH');
+        }
         const pwdHash = await hashPassword(password);
         await client.query(
           `INSERT INTO users (username, email, password_hash, status, role, invite_code_used, apply_info, is_owner, email_verified)
@@ -218,6 +223,9 @@ router.post('/register', async (req, res) => {
     } catch (e) {
       if (e.message === 'INVITE_EXHAUSTED') {
         return res.status(400).json({ error: '邀请码已被使用' });
+      }
+      if (e.message === 'OWNER_EMAIL_MISMATCH') {
+        return res.status(403).json({ error: '系统尚未初始化，请使用 OWNER_EMAIL 指定的邮箱注册首个管理员' });
       }
       throw e;
     }
@@ -403,8 +411,9 @@ router.post('/logout', async (req, res) => {
     await session.destroySession(req, res);
     // 同时撤销 OIDC 侧：否则 provider 的 _session cookie 还在，小站会被静默重新登录
     if (s) await revokeOidc(req, s.id);
-    res.clearCookie('_session', { path: '/' });
-    res.clearCookie('_session.sig', { path: '/' });
+    const provSession = process.env.OIDC_COOKIE_SECURE === 'true' ? '__Host-_session' : '_session';
+    res.clearCookie(provSession, { path: '/' });
+    res.clearCookie(`${provSession}.sig`, { path: '/' });
     res.json({ ok: true });
   } catch (e) {
     console.error('[logout] error:', e);
