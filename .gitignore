@@ -5,3 +5,8 @@ caddy_data/
 caddy_config/
 参考/
 keys/
+
+# 测试产物
+test/browser/shots/
+test/browser/chrome-profile*/
+test/browser/tmp/

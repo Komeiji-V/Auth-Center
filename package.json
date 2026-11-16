@@ -5,7 +5,12 @@
   "description": "轻量自研认证中心：注册/邮箱验证/审核/封禁/邀请码/JWT",
   "main": "src/server.js",
   "scripts": {
-    "start": "node src/server.js"
+    "start": "node src/server.js",
+    "test": "node --test test/e2e/",
+    "test:patch": "node test/patch/run-test.js",
+    "test:migration": "node test/patch/test-migration.js",
+    "test:e2e": "node --test test/e2e/",
+    "test:browser": "node test/browser/run.js"
   },
   "dependencies": {
     "cookie-parser": "^1.4.7",
@@ -18,5 +23,9 @@
     "otplib": "^12.0.1",
     "pg": "^8.12.0",
     "qrcode": "^1.5.4"
+  },
+  "devDependencies": {
+    "openid-client": "^6.9.0",
+    "puppeteer-core": "^25.17.0"
   }
 }
