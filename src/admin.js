@@ -126,8 +126,9 @@ router.post('/users/:id/reject', ...adminGuard, async (req, res) => {
     if (u.status === 'banned') return res.status(400).json({ error: '用户已被封禁，请使用封禁/删除流程' });
 
     const email = u.email;
-    // 删除记录前先清掉该用户在小站的所有会话
+    // 删除记录前先清掉该用户在小站的所有会话，以及本站的登录会话
     await kickIfEnabled(req, id);
+    await session.destroyUserSessions(id);
     await db.query('DELETE FROM users WHERE id = $1', [id]);
     await db.query('DELETE FROM codes WHERE LOWER(email) = $1', [email]);
     if (u.invite_code_used) {

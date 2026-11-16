@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import { authenticator } from 'otplib';
 import db from '../db.js';
 import auth from '../auth.js';
+import rateLimit from '../rateLimit.js';
 
 /**
  * 自定义登录交互（替代官方 devInteractions）
@@ -14,22 +15,9 @@ import auth from '../auth.js';
  */
 
 const SITE_TITLE = process.env.SITE_TITLE || '认证中心';
-const LOGIN_WINDOW_MS = 15 * 60 * 1000;
-const LOGIN_MAX_ATTEMPTS = 5;
-
-// 进程内失败计数（与旧登录路径的 rateLimit 相互独立）
-const attempts = new Map();
-
-function hitCounter(key) {
-  const now = Date.now();
-  const rec = attempts.get(key);
-  if (!rec || now - rec.first > LOGIN_WINDOW_MS) {
-    attempts.set(key, { count: 1, first: now });
-    return { count: 1, locked: false };
-  }
-  rec.count += 1;
-  return { count: rec.count, locked: rec.count > LOGIN_MAX_ATTEMPTS };
-}
+// 登录失败锁定复用 auth.js 同一套 store：两条登录入口（/api/login 与 OIDC interaction）
+// 共享计数，否则可以从另一条路径绕过 5 次锁定。
+const { loginAttempt, loginSuccess } = rateLimit;
 
 async function readBody(req) {
   const chunks = [];
@@ -118,7 +106,8 @@ async function handleLogin(provider, ctx, uid, body) {
   if (!username || !password) return fail('请输入账号和密码');
 
   const lockKey = `login:${ip}:${username.toLowerCase()}`;
-  if (hitCounter(lockKey).locked) return fail('尝试次数过多，请 15 分钟后再试');
+  const check = loginAttempt(lockKey);
+  if (check.locked) return fail(`尝试次数过多，请 ${check.remainSec} 秒后再试`);
 
   const GENERIC = '账号或密码错误';
 
@@ -153,7 +142,7 @@ async function handleLogin(provider, ctx, uid, body) {
     amr.push('otp');
   }
 
-  attempts.delete(lockKey);
+  loginSuccess(lockKey);
   db.audit(u.username, 'oidc_login_success', ip, '').catch(() => {});
 
   await provider.interactionFinished(

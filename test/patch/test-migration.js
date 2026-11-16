@@ -16,6 +16,16 @@ const db = require('../../src/db');
 
 const DB_URL = process.env.DATABASE_URL;
 
+// 安全守卫：本脚本会清空 / 重建 users 表，拒绝在非测试库上运行
+{
+  const dbName = new URL(DB_URL).pathname.replace(/^\//, '');
+  if (!/test/i.test(dbName)) {
+    console.error(`拒绝执行：数据库 "${dbName}" 看起来不是测试库（库名需包含 test）`);
+    process.exit(1);
+  }
+}
+
+
 let passed = 0;
 let failed = 0;
 

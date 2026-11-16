@@ -86,6 +86,12 @@ function api(path, options = {}) {
   const headers = { 'Content-Type': 'application/json' };
   return fetch(path, { ...options, headers }).then(async (r) => {
     const data = await r.json().catch(() => ({}));
+    if (r.status === 401) {
+      // 会话过期：回到「需要登录」态，避免用户对着失效页面反复点
+      document.getElementById('main').style.display = 'none';
+      document.getElementById('done').style.display = 'none';
+      document.getElementById('needLogin').style.display = 'block';
+    }
     return { status: r.status, data };
   });
 }

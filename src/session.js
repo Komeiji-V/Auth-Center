@@ -66,19 +66,10 @@ async function destroyUserSessions(userId) {
   return r.rowCount;
 }
 
-/** 每日清理过期会话 */
-async function cleanupExpired() {
-  const r = await db.query(
-    `DELETE FROM sessions WHERE expires_at < now() - interval '1 day'`
-  );
-  return r.rowCount;
-}
-
 module.exports = {
   COOKIE_NAME,
   createSession,
   getSession,
   destroySession,
   destroyUserSessions,
-  cleanupExpired,
 };

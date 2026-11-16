@@ -1,7 +1,7 @@
 # 认证中心（Auth Center）
 
-自研轻量统一身份认证服务（SSO），为多个自建小站（听音室、小游戏等）提供统一账号体系。
-支持游客模式：小站未登录可直接使用基础功能，登录后解锁云端存档等高级服务。
+面向多个自建小站（听音室、小游戏等）的统一身份认证服务，提供 **标准 OpenID Connect** 与集中式账号管理。
+小站无需共享密钥、无需读用户库，接入方式见 [`docs/GUIDE.md`](docs/GUIDE.md)。
 
 ## 功能
 
@@ -19,18 +19,20 @@
 
 ## 技术栈
 
-Node.js 20 + Express 4 + PostgreSQL 15 + oidc-provider 9（ESM，经 .mjs 与 CJS 主体共存）
+Node.js 22 + Express 4 + PostgreSQL 15 + oidc-provider 9（ESM，经 `.mjs` 与 CJS 主体共存）
 
 ## 目录结构
 
 ```
-├─ docker-compose.yml   # auth + demo-app + caddy 容器编排
+├─ docker-compose.yml   # auth + caddy 容器编排
+├─ Dockerfile           # node:22-alpine，密钥运行时挂载
 ├─ Caddyfile            # 反代配置（域名替换后自动 HTTPS）
 ├─ .env.example         # 全部配置项模板
 ├─ src/                 # 后端：server/auth/admin/db/mail/rateLimit/middleware/session
 ├─ src/oidc/            # OIDC：adapter/provider/interaction/kick/cleanup（.mjs）
 ├─ scripts/             # gen-keys.mjs 生成签名密钥
 ├─ public/              # 前端：login/register/profile/totp/admin/forgot + site.js
+├─ test/                # 测试：patch / e2e / browser（见 test/README.md）
 └─ docs/                # 文档（见下方导航）
 ```
 
@@ -44,11 +46,24 @@ docker run -d --name auth-pg -e POSTGRES_PASSWORD=test123 -p 5432:5432 postgres:
 # 2. 配置环境（修改 DATABASE_URL / OIDC_COOKIE_SECRET；本地 SMTP_DEBUG=true）
 cp .env.example .env
 
-# 3. 启动
-npm install && node src/server.js     # auth: http://localhost:8000
+# 3. 生成 OIDC 签名密钥（只需一次，keys/ 已被 gitignore）
+npm install && node scripts/gen-keys.mjs
+
+# 4. 启动
+node src/server.js     # auth: http://localhost:8000
 ```
 
 > 第一个注册的用户自动成为 **owner（超级管理员）**。登录后到 `/totp` 绑定 TOTP。
+
+### 本地跑测试
+
+```bash
+npm run test:e2e        # OIDC 全链路（需 :8000 + 小站 fixture 在 :8001）
+npm run test:patch      # 注册流程回归（会清空测试库）
+npm run test:browser    # 无头浏览器 UI（需 CHROME_PATH）
+```
+
+详见 [test/README.md](test/README.md)。
 
 ## 文档导航
 
@@ -58,8 +73,9 @@ npm install && node src/server.js     # auth: http://localhost:8000
 | [docs/DEPLOY.md](docs/DEPLOY.md) | **部署指南**：VPS 初始化、.env 配置、Caddy/nginx 反代、初始化管理员、验证清单 |
 | [docs/GUIDE.md](docs/GUIDE.md) | **小站接入教程**：OIDC + BFF 完整代码 |
 | [docs/OIDC.md](docs/OIDC.md) | **OIDC 说明**：端点、配置、封禁踢人机制 |
-| [docs/API.md](docs/API.md) | **接口契约**：全部 27 个接口的方法/参数/响应/错误/限流，注册状态机（agent 可读） |
-| [docs/OPS.md](docs/OPS.md) | **运维手册**：日志/备份恢复/升级、故障排查、安全维护（密钥轮换等）、速查表 |
+| [docs/API.md](docs/API.md) | **接口契约**：全部 28 个接口的方法/参数/响应/错误/限流，注册状态机（agent 可读） |
+| [docs/OPS.md](docs/OPS.md) | **运维手册**：日志/备份恢复/升级、故障排查、会话与密钥轮换、多实例部署、速查表 |
+| [test/README.md](test/README.md) | **测试**：补丁回归 / OIDC 端到端 / 浏览器 UI 的前置条件与运行方式 |
 
 ## 安全说明（摘要）
 

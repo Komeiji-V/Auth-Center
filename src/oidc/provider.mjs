@@ -100,7 +100,7 @@ export function createProvider() {
     },
 
     cookies: {
-      keys: [process.env.OIDC_COOKIE_SECRET || process.env.JWT_SECRET],
+      keys: [process.env.OIDC_COOKIE_SECRET],
       // 生产必须为 true（HTTPS）；本地 http 调试按 OIDC_INSECURE 放行
       short: { secure: process.env.OIDC_COOKIE_SECURE === 'true' },
       long: { secure: process.env.OIDC_COOKIE_SECURE === 'true' },

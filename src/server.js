@@ -165,7 +165,7 @@ setInterval(async () => {
 
 async function main() {
   if (!process.env.DATABASE_URL) throw new Error('缺少 DATABASE_URL 环境变量');
-  if (!process.env.OIDC_COOKIE_SECRET && !process.env.JWT_SECRET) {
+  if (!process.env.OIDC_COOKIE_SECRET || process.env.OIDC_COOKIE_SECRET.startsWith('CHANGE_ME')) {
     throw new Error('请设置 OIDC_COOKIE_SECRET（openssl rand -hex 32）');
   }
   await db.initDb(process.env.DATABASE_URL);

@@ -33,6 +33,13 @@ export function startCleanup(provider) {
     }
 
     for (const r of rows) {
+      // 重试上限：小站长期离线时不无限堆积
+      if (r.attempts >= 10) {
+        console.error(`[oidc retry] ${r.client_id} 重试 ${r.attempts} 次仍失败，放弃（sub=${r.sub}）`);
+        await db.query('DELETE FROM backchannel_retry WHERE id = $1', [r.id]);
+        continue;
+      }
+
       const client = await provider.Client.find(r.client_id).catch(() => undefined);
       if (!client || !client.backchannelLogoutUri) {
         await db.query('DELETE FROM backchannel_retry WHERE id = $1', [r.id]);
