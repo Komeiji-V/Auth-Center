@@ -9,3 +9,7 @@ test/browser/shots
 test/browser/chrome-profile*
 test/browser/tmp
 .env.*
+test
+docs
+.git*
+*.md

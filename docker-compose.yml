@@ -7,11 +7,20 @@ services:
     # 首次部署前：mkdir -p keys && docker compose run --rm auth node scripts/gen-keys.mjs
     volumes:
       - ./keys:/app/keys:ro
+    # 容器加固：根文件系统只读、丢弃全部 Linux capabilities、禁止提权
+    # Node 运行期只需要读 /app 与写 /tmp
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
     # 生产只允许本机反代访问，不对外暴露
     ports:
       - "127.0.0.1:8000:8000"
     healthcheck:
-      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8000/api/config || exit 1"]
+      test: ["CMD-SHELL", "wget -q -O /dev/null \"http://127.0.0.1:${PORT:-8000}/api/config\" || exit 1"]
       interval: 30s
       timeout: 3s
       retries: 3
