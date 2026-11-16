@@ -33,6 +33,8 @@ function loadClients() {
   }
   return list.map((c) => ({
     client_id: c.client_id,
+    // 授权列表里展示给用户看的名字
+    client_name: c.client_name || c.client_id,
     client_secret: c.client_secret,
     redirect_uris: c.redirect_uris,
     post_logout_redirect_uris: c.post_logout_redirect_uris || [],

@@ -23,6 +23,10 @@
     min-width: 0;
   }
   #loginNeeded { display: none; flex: 0 1 100%; max-width: 420px; margin: 0 auto; text-align: center; padding: 60px 24px; }
+  .session-row { padding: 10px 0; border-bottom: 1px solid #f0f0f0; font-size: 13px; }
+  .session-row:last-child { border-bottom: 0; }
+  .muted { color: #888; font-size: 12px; margin-top: 2px; }
+  .tag { background: #e8f0ff; color: #2563eb; font-size: 11px; padding: 1px 6px; border-radius: 4px; margin-left: 4px; }
   .main-grid { display: none; }
   .main-grid.show { display: flex; flex-wrap: wrap; gap: 16px; }
   @media (max-width: 620px) {
@@ -114,6 +118,20 @@
         </div>
       </div>
     </div>
+
+    <div class="card">
+      <h2>登录设备</h2>
+      <p style="font-size:13px; color:#666; margin-bottom:8px;" id="sessionHint"></p>
+      <div id="sessionList"></div>
+      <br><button id="revokeOthers" class="gray">退出其他设备</button>
+      <div class="msg" id="msgSessions"></div>
+    </div>
+
+    <div class="card">
+      <h2>已授权应用</h2>
+      <p style="font-size:13px; color:#666; margin-bottom:8px;">这些站点通过认证中心登录过你的账号。</p>
+      <div id="appList"></div>
+    </div>
   </div>
 </div>
 
@@ -156,6 +174,75 @@ async function init() {
     '角色：' + (user.role === 'admin' ? '管理员' : '普通用户');
   if (user.role === 'admin') document.getElementById('adminLink').style.display = 'inline';
   renderTotp();
+  loadSessions();
+  loadApps();
+}
+
+// 粗粒度识别设备：只区分操作系统与浏览器，不追求准确
+function parseUA(ua) {
+  if (!ua) return '未知设备';
+  const os = /Windows/.test(ua) ? 'Windows'
+    : /iPhone|iPad|iPod/.test(ua) ? 'iOS'
+    : /Android/.test(ua) ? 'Android'
+    : /Mac OS X|Macintosh/.test(ua) ? 'macOS'
+    : /Linux/.test(ua) ? 'Linux' : '未知系统';
+  const br = /Edg\//.test(ua) ? 'Edge'
+    : /OPR\//.test(ua) ? 'Opera'
+    : /Chrome\//.test(ua) ? 'Chrome'
+    : /Firefox\//.test(ua) ? 'Firefox'
+    : /Safari\//.test(ua) ? 'Safari' : '未知浏览器';
+  return os + ' · ' + br;
+}
+
+function fmtTime(v) {
+  if (!v) return '-';
+  try { return new Date(v).toLocaleString(); } catch { return '-'; }
+}
+
+async function loadSessions() {
+  const { status, data } = await api('/api/sessions');
+  if (status !== 200) return;
+  document.getElementById('sessionHint').textContent =
+    '会话最长 ' + data.ttlDays + ' 天，闲置超过 ' + data.idleHours + ' 小时自动失效。';
+
+  const el = document.getElementById('sessionList');
+  if (!data.sessions.length) {
+    el.innerHTML = '<div class="muted">无</div>';
+    return;
+  }
+  el.innerHTML = data.sessions.map((s) =>
+    '<div class="session-row"><b>' + parseUA(s.userAgent) + '</b>' +
+    (s.current ? '<span class="tag">当前</span>' : '') +
+    '<div class="muted">' + escapeHtml(s.ip || '未知 IP') +
+    ' · 最后活跃 ' + fmtTime(s.lastSeen) + '</div></div>'
+  ).join('');
+
+  const btn = document.getElementById('revokeOthers');
+  btn.disabled = data.sessions.length <= 1;
+}
+
+document.getElementById('revokeOthers').addEventListener('click', async () => {
+  const btn = document.getElementById('revokeOthers');
+  btn.disabled = true;
+  const { status, data } = await api('/api/sessions/revoke-others', { method: 'POST' });
+  msg('msgSessions', status === 200 ? ('已退出 ' + data.revoked + ' 台设备') : (data.error || '操作失败'),
+      status === 200 ? 'ok' : 'err');
+  loadSessions();
+});
+
+async function loadApps() {
+  const { status, data } = await api('/api/authorizations');
+  if (status !== 200) return;
+  const el = document.getElementById('appList');
+  if (!data.apps.length) {
+    el.innerHTML = '<div class="muted">还没有应用使用过你的账号</div>';
+    return;
+  }
+  el.innerHTML = data.apps.map((a) =>
+    '<div class="session-row"><b>' + escapeHtml(a.clientName) + '</b>' +
+    '<div class="muted">授权范围：' + escapeHtml(a.scope || 'openid') +
+    ' · ' + fmtTime(a.authorizedAt) + '</div></div>'
+  ).join('');
 }
 
 function showLoginNeeded() {

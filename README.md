@@ -73,7 +73,7 @@ npm run test:browser    # 无头浏览器 UI（需 CHROME_PATH）
 | [docs/DEPLOY.md](docs/DEPLOY.md) | **部署指南**：VPS 初始化、.env 配置、Caddy/nginx 反代、初始化管理员、验证清单 |
 | [docs/GUIDE.md](docs/GUIDE.md) | **小站接入教程**：OIDC + BFF 完整代码 |
 | [docs/OIDC.md](docs/OIDC.md) | **OIDC 说明**：端点、配置、封禁踢人机制 |
-| [docs/API.md](docs/API.md) | **接口契约**：全部 28 个接口的方法/参数/响应/错误/限流，注册状态机（agent 可读） |
+| [docs/API.md](docs/API.md) | **接口契约**：全部 31 个接口的方法/参数/响应/错误/限流，注册状态机（agent 可读） |
 | [docs/OPS.md](docs/OPS.md) | **运维手册**：日志/备份恢复/升级、故障排查、会话与密钥轮换、多实例部署、速查表 |
 | [test/README.md](test/README.md) | **测试**：补丁回归 / OIDC 端到端 / 浏览器 UI 的前置条件与运行方式 |
 

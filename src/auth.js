@@ -387,7 +387,10 @@ router.post('/login', async (req, res) => {
     }
 
     loginSuccess(lockKey);
-    await session.createSession(res, u.id);
+    await session.createSession(res, u.id, {
+      ip: req.ip,
+      userAgent: req.headers['user-agent'],
+    });
     const needTotpSetup = u.role === 'admin' && !u.totp_enabled && process.env.ADMIN_TOTP_REQUIRED === 'true';
     db.audit(u.username, 'login_success', ip, '');
     res.json({
@@ -433,6 +436,77 @@ router.get('/userinfo', createSessionAuth(), (req, res) => {
   });
 });
 
+const profileAuth = createSessionAuth();
+
+// ---- 登录设备管理 ----
+router.get('/sessions', profileAuth, async (req, res) => {
+  try {
+    const list = await session.listSessions(req.user.id);
+    res.json({
+      idleHours: session.IDLE_HOURS,
+      ttlDays: session.TTL_DAYS,
+      sessions: list.map((s) => ({
+        id: s.id,
+        current: s.id === req.user.sid,
+        ip: s.ip,
+        userAgent: s.user_agent,
+        createdAt: s.created_at,
+        lastSeen: s.last_seen,
+      })),
+    });
+  } catch (e) {
+    console.error('[sessions] error:', e);
+    res.status(500).json({ error: '服务器内部错误' });
+  }
+});
+
+router.post('/sessions/revoke-others', profileAuth, async (req, res) => {
+  try {
+    const n = await session.destroyOtherSessions(req.user.id, req.user.sid);
+    db.audit(req.user.username, 'sessions_revoke_others', req.ip, `count=${n}`);
+    res.json({ ok: true, revoked: n });
+  } catch (e) {
+    console.error('[sessions revoke] error:', e);
+    res.status(500).json({ error: '服务器内部错误' });
+  }
+});
+
+// ---- 已授权的应用（OIDC Grant）----
+router.get('/authorizations', profileAuth, async (req, res) => {
+  try {
+    const oidc = req.app.locals && req.app.locals.oidc;
+    if (!oidc) return res.json({ apps: [] });
+
+    const { rows } = await db.query(
+      `SELECT DISTINCT ON (payload->>'clientId')
+              payload->>'clientId'      AS client_id,
+              payload->'openid'->>'scope' AS scope,
+              payload->>'iat'           AS iat
+       FROM oidc_payloads
+       WHERE type = 'Grant'
+         AND payload->>'accountId' = $1
+         AND (expires_at IS NULL OR expires_at > now())
+       ORDER BY payload->>'clientId', (payload->>'iat')::bigint DESC`,
+      [String(req.user.id)]
+    );
+
+    const apps = [];
+    for (const r of rows) {
+      const client = await oidc.provider.Client.find(r.client_id).catch(() => null);
+      apps.push({
+        clientId: r.client_id,
+        clientName: (client && (client.clientName || client.client_name)) || r.client_id,
+        scope: r.scope || '',
+        authorizedAt: r.iat ? new Date(Number(r.iat) * 1000).toISOString() : null,
+      });
+    }
+    res.json({ apps });
+  } catch (e) {
+    console.error('[authorizations] error:', e);
+    res.status(500).json({ error: '服务器内部错误' });
+  }
+});
+
 // ---- 注册模式开关 + 站点设置 + 允许回跳的站点白名单（防开放重定向）----
 router.get('/config', async (req, res) => {
   try {
@@ -457,8 +531,6 @@ router.get('/config', async (req, res) => {
 });
 
 // ===================== 个人中心 =====================
-const profileAuth = createSessionAuth();
-
 /**
  * 收回该账号在小站侧的访问权（OIDC 的 Session / Grant / RefreshToken）
  * 只删本站 sessions 是不够的：小站手里的 refresh token 仍然有效。

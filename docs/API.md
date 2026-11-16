@@ -201,6 +201,63 @@
 
 **错误**：401（未登录/过期/版本不符）；403（pending/banned）。
 
+## GET /api/sessions
+
+当前用户的所有有效会话（设备管理）。
+
+**响应**：
+
+```json
+{
+  "idleHours": 24,
+  "ttlDays": 7,
+  "sessions": [
+    {
+      "id": "…",
+      "current": true,
+      "ip": "203.0.113.9",
+      "userAgent": "Mozilla/5.0 …",
+      "createdAt": "…",
+      "lastSeen": "…"
+    }
+  ]
+}
+```
+
+- 只返回 `expires_at > now()` 且 `last_seen` 在空闲窗口内的会话
+- `current=true` 表示就是发起请求的这一条
+
+## POST /api/sessions/revoke-others
+
+退出除当前设备外的所有会话。
+
+**响应**：`{ ok: true, revoked: <数量> }`
+
+> 只清本站的 `sessions`。小站侧的 OIDC 凭据不受影响（那是「退出登录 / 改密」的职责）。
+
+## GET /api/authorizations
+
+当前用户授权的 OIDC 应用（来自 `oidc_payloads` 的 `Grant`）。
+
+**响应**：
+
+```json
+{
+  "apps": [
+    {
+      "clientId": "music",
+      "clientName": "听音室",
+      "scope": "openid email profile offline_access",
+      "authorizedAt": "…"
+    }
+  ]
+}
+```
+
+- 按 `clientId` 去重，取最近一次授权
+- `clientName` 来自 `OIDC_CLIENTS` 里的 `client_name` 字段，未配置时回退为 `client_id`
+- OIDC 未启用时返回空数组
+
 ## POST /api/profile/username
 
 改用户名。**请求体**：`{ username }`（2-20 位中文/字母/数字/下划线，查重）。

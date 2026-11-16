@@ -91,6 +91,10 @@ async function initSchema() {
   `);
   await query('CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions (user_id)');
   await query('CREATE INDEX IF NOT EXISTS idx_sessions_exp  ON sessions (expires_at)');
+  // 会话卫生：最后活跃时间（空闲超时用）、来源 IP 与 UA（设备列表用）
+  await query(`ALTER TABLE sessions ADD COLUMN IF NOT EXISTS last_seen TIMESTAMPTZ NOT NULL DEFAULT now()`);
+  await query(`ALTER TABLE sessions ADD COLUMN IF NOT EXISTS ip TEXT`);
+  await query(`ALTER TABLE sessions ADD COLUMN IF NOT EXISTS user_agent TEXT`);
   await query(`
     CREATE TABLE IF NOT EXISTS invite_codes (
       id SERIAL PRIMARY KEY,

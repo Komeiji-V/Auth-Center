@@ -201,6 +201,18 @@ TRUNCATE users RESTART IDENTITY;                     -- ⚠️ 见下方警告
 SELECT * FROM invite_usage_log WHERE code = 'XXXX' ORDER BY id;
 ```
 
+### 会话卫生
+
+| 配置 | 作用 |
+|---|---|
+| `SESSION_TTL_DAYS`（默认 7） | 会话绝对上限 |
+| `SESSION_IDLE_HOURS`（默认 24） | 闲置超时：`last_seen` 超过该窗口即失效 |
+
+- `last_seen` 在每次请求命中会话时推进（60 秒内不重复写库）
+- 个人中心「登录设备」可查看所有会话与最近活跃时间
+- 「退出其他设备」删除除当前之外的全部会话；改密 / 重置密码 / 封禁 / 删号会删全部会话
+- 会话表含 `ip` / `user_agent`，便于用户识别设备，也便于事后排查
+
 ### 手动治理
 
 - 清理已吊销的 refresh：`DELETE FROM refresh_tokens WHERE revoked = TRUE AND expires_at < now();`
