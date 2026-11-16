@@ -156,6 +156,8 @@ async function initSchema() {
   await query('CREATE INDEX IF NOT EXISTS idx_oidc_payloads_uid   ON oidc_payloads (uid)');
   await query('CREATE INDEX IF NOT EXISTS idx_oidc_payloads_exp   ON oidc_payloads (expires_at)');
   await query('CREATE INDEX IF NOT EXISTS idx_oidc_payloads_ucode ON oidc_payloads (user_code)');
+  // 撤销链按 accountId 删记录，没有索引会全表扫
+  await query(`CREATE INDEX IF NOT EXISTS idx_oidc_payloads_account ON oidc_payloads ((payload->>'accountId'))`);
 
   // back-channel logout 失败重试队列
   await query(`

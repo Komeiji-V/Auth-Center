@@ -411,12 +411,16 @@ router.post('/login', async (req, res) => {
 router.post('/logout', async (req, res) => {
   try {
     const s = await session.getSession(req);
-    await session.destroySession(req, res);
-    // 同时撤销 OIDC 侧：否则 provider 的 _session cookie 还在，小站会被静默重新登录
+    // 先撤销 OIDC 侧再删本地会话：撤销失败时抛 500，用户重试即可，
+    // 而不是本地已登出、小站凭据却还活着
     if (s) await revokeOidc(req, s.id);
-    const { PROVIDER_SESSION_COOKIE } = require('./cookie-config');
-    res.clearCookie(PROVIDER_SESSION_COOKIE, { path: '/' });
-    res.clearCookie(`${PROVIDER_SESSION_COOKIE}.sig`, { path: '/' });
+    await session.destroySession(req, res);
+    const { PROVIDER_SESSION_COOKIE, SECURE } = require('./cookie-config');
+    const cookieOpts = { path: '/', secure: SECURE, sameSite: 'lax' };
+    res.clearCookie(PROVIDER_SESSION_COOKIE, cookieOpts);
+    res.clearCookie(`${PROVIDER_SESSION_COOKIE}.sig`, cookieOpts);
+    // 迁移残留：旧的无前缀 cookie（浏览器侧的 __Host- 前缀 cookie 必须带 Secure 才能删掉）
+    res.clearCookie('ac_sid', cookieOpts);
     res.json({ ok: true });
   } catch (e) {
     console.error('[logout] error:', e);
@@ -446,7 +450,7 @@ router.get('/sessions', profileAuth, async (req, res) => {
       idleHours: session.IDLE_HOURS,
       ttlDays: session.TTL_DAYS,
       sessions: list.map((s) => ({
-        id: s.id,
+        // 不能返回 s.id：那就是 ac_sid 的原值，一旦回给 JS，HttpOnly 形同虚设
         current: s.id === req.user.sid,
         ip: s.ip,
         userAgent: s.user_agent,
@@ -507,6 +511,23 @@ router.get('/authorizations', profileAuth, async (req, res) => {
   }
 });
 
+// ---- 撤销所有小站授权（不动本站会话）----
+router.post('/authorizations/revoke-all', profileAuth, async (req, res) => {
+  try {
+    const oidc = req.app.locals && req.app.locals.oidc;
+    if (!oidc) return res.json({ ok: true, revoked: 0 });
+
+    // revokeAccount 删的是 OIDC 的 Session/Grant/RefreshToken，
+    // 本站的 ac_sid 不在其中，所以用户不会被自己踢下线
+    await oidc.revokeAccount(req.user.id);
+    db.audit(req.user.username, 'oidc_revoke_all', req.ip, '');
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('[authorizations revoke] error:', e);
+    res.status(500).json({ error: '撤销失败，请稍后重试' });
+  }
+});
+
 // ---- 注册模式开关 + 站点设置 + 允许回跳的站点白名单（防开放重定向）----
 router.get('/config', async (req, res) => {
   try {
@@ -538,11 +559,9 @@ router.get('/config', async (req, res) => {
 async function revokeOidc(req, userId) {
   const oidc = req.app.locals && req.app.locals.oidc;
   if (!oidc) return;
-  try {
-    await oidc.revokeAccount(userId);
-  } catch (e) {
-    console.error('[oidc revoke] failed:', e.message);
-  }
+  // 不吞异常：改密/重置/封禁属于安全关键路径，撤销失败必须让调用方知道，
+  // 否则会给用户「已收回访问权」的假象（攻击者的 refresh token 仍在）
+  await oidc.revokeAccount(userId);
 }
 
 // ---- 修改用户名 ----

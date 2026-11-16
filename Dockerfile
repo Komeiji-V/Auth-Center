@@ -11,6 +11,10 @@ COPY --chown=node:node . .
 # 签名密钥不打进镜像，运行时挂载：./keys:/app/keys:ro
 # 首次部署前在宿主机执行 node scripts/gen-keys.mjs
 #
+# 生产环境标记：S-1 的 SMTP_DEBUG 守卫、SITE_ORIGIN 告警都依赖它
+# 本地调试容器时用 -e NODE_ENV=development 覆盖
+ENV NODE_ENV=production
+
 # 以非 root 运行：官方 node 镜像的 node 用户是 uid/gid 1000，
 # 与多数 Linux 发行版的首个普通用户一致，能读取宿主 600 权限的 keys/jwks.json。
 # 若宿主的 uid 不是 1000，需 chown 或改用 --user 覆盖。

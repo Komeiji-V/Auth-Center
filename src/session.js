@@ -70,7 +70,8 @@ async function getSession(req) {
 async function destroySession(req, res) {
   const id = req.cookies && req.cookies[COOKIE_NAME];
   if (id) await db.query('DELETE FROM sessions WHERE id = $1', [id]);
-  res.clearCookie(COOKIE_NAME, { path: '/' });
+  // __Host- 前缀 cookie 的 Set-Cookie 必须带 Secure，否则浏览器整条忽略、删不掉
+  res.clearCookie(COOKIE_NAME, { path: '/', secure: SECURE, sameSite: 'lax' });
 }
 
 /** 销毁某用户全部会话（改密 / 封禁 / 删号） */

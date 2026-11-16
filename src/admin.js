@@ -37,7 +37,7 @@ async function kickIfEnabled(req, userId) {
 
 async function loadUser(id) {
   const { rows } = await db.query(
-    'SELECT id, username, email, status, role, is_owner, invite_code_used, apply_info, totp_enabled, totp_secret FROM users WHERE id = $1',
+    'SELECT id, username, email, status, role, is_owner, invite_code_used, apply_info, totp_enabled, totp_secret, email_verified FROM users WHERE id = $1',
     [id]
   );
   return rows[0] || null;
@@ -323,15 +323,13 @@ router.post('/users/:id/edit', ...adminGuard, async (req, res) => {
       newEmail = norm;
       if (newEmail !== u.email) {
         await session.destroyUserSessions(id);
+        // 与自助改邮箱路径对齐：管理员改邮箱同样要撤销小站凭据
+        await kickIfEnabled(req, id);
       }
     }
     if (newUsername !== u.username || newEmail !== u.email) {
       // 改邮箱后清掉该用户全部会话（token_version 机制已随 JWT 移除）
-      if (newEmail !== u.email) {
-        await db.query('UPDATE users SET username = $1, email = $2 WHERE id = $3', [newUsername, newEmail, id]);
-      } else {
-        await db.query('UPDATE users SET username = $1, email = $2 WHERE id = $3', [newUsername, newEmail, id]);
-      }
+      await db.query('UPDATE users SET username = $1, email = $2 WHERE id = $3', [newUsername, newEmail, id]);
       db.audit(req.user.username, 'user_edit', req.ip, `target=${u.username} -> ${newUsername}/${newEmail}`);
     }
     res.json({ ok: true, user: { id: u.id, username: newUsername, email: newEmail } });
@@ -346,6 +344,14 @@ router.post('/config', ...adminGuard, async (req, res) => {
   try {
     if (!req.user.is_owner) return res.status(403).json({ error: '仅初始管理员（owner）可修改注册模式' });
     const { invite_required, email_verify_required, review_required } = req.body || {};
+    // 与 set-admin 对齐：判定与赋值都只认布尔值，避免 "false" 字符串被当成真
+    if (
+      typeof invite_required !== 'boolean' ||
+      typeof email_verify_required !== 'boolean' ||
+      typeof review_required !== 'boolean'
+    ) {
+      return res.status(400).json({ error: '三个开关都必须是布尔值' });
+    }
     const next = {
       invite_required: invite_required ? 'true' : 'false',
       email_verify_required: email_verify_required === false ? 'false' : 'true',

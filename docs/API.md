@@ -125,7 +125,7 @@ Base URL：`https://auth.你的域名`（本地 `http://localhost:8000`）
 
 ```json
 { "idleHours": 24, "ttlDays": 7,
-  "sessions": [{ "id": "…", "current": true, "ip": "…", "userAgent": "…",
+  "sessions": [{ "current": true, "ip": "…", "userAgent": "…",
                  "createdAt": "…", "lastSeen": "…" }] }
 ```
 
@@ -143,6 +143,14 @@ Base URL：`https://auth.你的域名`（本地 `http://localhost:8000`）
 ```
 
 按 `clientId` 去重取最近一次；`clientName` 来自 `OIDC_CLIENTS` 的 `client_name`。
+
+## POST /api/authorizations/revoke-all
+
+撤销该用户在所有小站的授权（OIDC 的 Session / Grant / RefreshToken）。
+
+- 不影响本站会话（`ac_sid` 不在撤销范围内），用户不会被自己踢下线
+- 撤销后所有小站都需要重新授权
+- OIDC 未启用时返回 `{ ok: true, revoked: 0 }`
 
 ## POST /api/profile/username
 

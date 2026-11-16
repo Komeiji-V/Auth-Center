@@ -27,7 +27,7 @@ docker run -d --name auth-pg -e POSTGRES_PASSWORD=test123 -p 5432:5432 postgres:
 
 # 2. 配置
 cp .env.example .env
-# 改 DATABASE_URL / OIDC_COOKIE_SECRET；本地设 SMTP_DEBUG=true
+# 改 DATABASE_URL / OIDC_COOKIE_SECRET；本地可设 SMTP_DEBUG=true（生产禁止）
 
 # 3. 签名密钥（只需一次，keys/ 已 gitignore）
 npm install && node scripts/gen-keys.mjs

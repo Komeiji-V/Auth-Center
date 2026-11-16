@@ -124,6 +124,7 @@
       <p style="font-size:13px; color:#666; margin-bottom:8px;" id="sessionHint"></p>
       <div id="sessionList"></div>
       <br><button id="revokeOthers" class="gray">退出其他设备</button>
+      <p class="muted" style="margin-top:6px;">仅退出认证中心的登录状态，小站里的登录不受影响</p>
       <div class="msg" id="msgSessions"></div>
     </div>
 
@@ -131,6 +132,8 @@
       <h2>已授权应用</h2>
       <p style="font-size:13px; color:#666; margin-bottom:8px;">这些站点通过认证中心登录过你的账号。</p>
       <div id="appList"></div>
+      <br><button id="revokeAllApps" class="gray">撤销全部小站授权</button>
+      <div class="msg" id="msgApps"></div>
     </div>
   </div>
 </div>
@@ -228,6 +231,16 @@ document.getElementById('revokeOthers').addEventListener('click', async () => {
   msg('msgSessions', status === 200 ? ('已退出 ' + data.revoked + ' 台设备') : (data.error || '操作失败'),
       status === 200 ? 'ok' : 'err');
   loadSessions();
+});
+
+document.getElementById('revokeAllApps').addEventListener('click', async () => {
+  if (!confirm('撤销后所有小站都需要重新授权，确定？')) return;
+  const btn = document.getElementById('revokeAllApps');
+  btn.disabled = true;
+  const { status, data } = await api('/api/authorizations/revoke-all', { method: 'POST' });
+  msg('msgApps', status === 200 ? '已撤销全部小站授权' : (data.error || '撤销失败'),
+      status === 200 ? 'ok' : 'err');
+  loadApps();
 });
 
 async function loadApps() {

@@ -35,9 +35,10 @@ const origins = Array.from(new Set(
     })
     .filter(Boolean)
 ));
-// CSP connect-src：默认仅 'self'；白名单小站需被登录页跨域 POST 凭证（/api/auth/sso），动态加入
-// 注意：CSP 关键字必须带单引号（'self'），否则会被解析为主机名导致同源请求全部被拦
-const connectSrc = ["'self'", ...origins].join(' ');
+// CSP connect-src 只放行 'self'。
+// 早期为「登录页跨域 POST 凭证 /api/auth/sso」放行过小站 origin，该端点已随 OIDC 迁移删除；
+// origins 仍保留给 /api/config 的 redirect_origins（totp 页跳转白名单）与 CORS 说明。
+const connectSrc = "'self'";
 
 app.disable('x-powered-by');
 app.use((req, res, next) => {
@@ -70,11 +71,22 @@ app.use((req, res, next) => {
 // 必须在 OIDC 之前：否则 /auth /token /interaction 完全不受限，
 // 等于给撞库和密码喷洒留了无限次入口。
 const GLOBAL_REQ_PER_MIN = parseInt(process.env.GLOBAL_REQ_PER_MIN, 10) || 60;
+const OIDC_EXEMPT = new Set(['/jwks', '/me']);
 app.use((req, res, next) => {
-  // 发现文档与公钥豁免：健康检查、客户端拉公钥都会高频访问
-  if (req.path === '/jwks' || req.path.startsWith('/.well-known')) return next();
+  // 豁免：发现文档、公钥、userinfo
+  // /me 豁免是因为 BFF 模式下所有用户共享小站服务器的同一个出口 IP，
+  // 按 IP 限流会让整个小站被一个人的流量拖垮
+  if (OIDC_EXEMPT.has(req.path) || req.path.startsWith('/.well-known')) return next();
+
   if (!ipRateLimit(req.ip, 60 * 1000, GLOBAL_REQ_PER_MIN)) {
-    return res.status(429).json({ error: '请求过于频繁' });
+    res.setHeader('Retry-After', '60');
+    // OIDC 端点按 OAuth 错误形态返回，避免客户端库解析失败
+    const isOAuth = req.path === '/token' || req.path === '/auth';
+    return res.status(429).json(
+      isOAuth
+        ? { error: 'temporarily_unavailable', error_description: '请求过于频繁' }
+        : { error: '请求过于频繁' }
+    );
   }
   next();
 });

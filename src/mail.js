@@ -5,6 +5,10 @@ let transporter = null;
 
 function initMail() {
   if (process.env.SMTP_DEBUG === 'true') {
+    // fail-fast：不要等到第一封忘记密码的邮件才暴露「验证码会回显」
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error('SMTP_DEBUG 不允许在生产环境开启（会把验证码回显在 HTTP 响应里）');
+    }
     console.log('[mail] SMTP_DEBUG=true：验证码将打印到日志，不会真实发信');
     return;
   }
