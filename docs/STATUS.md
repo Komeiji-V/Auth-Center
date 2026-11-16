@@ -1,63 +1,55 @@
-# 项目状态与交接文档
+# 项目状态与交接
 
-本文件记录认证中心（Auth Center）的**当前实况**，供开发者/新对话接手时快速对齐。
-接口契约见 `docs/API.md`，运维见 `docs/OPS.md`，部署见 `docs/DEPLOY.md`，接入与开发见 `docs/GUIDE.md`。
-
-> 本仓库为公开仓库：**不包含任何敏感信息**（数据库密码、OIDC 签名私钥、TOTP 密钥、SMTP 凭据等均不在仓库内）。
-
-## 一、当前部署实况
+## 一、当前部署
 
 | 项 | 状态 |
 |---|---|
-| 生产域名 | `auth.komeijiv.cn`（HTTPS 已生效） |
-| 反代 | openresty（nginx 系），非 Caddy |
-| 已接入小站 | `music.komeijiv.cn`（OIDC 接入方式见 `docs/GUIDE.md`） |
-| 注册开关（config 表为准） | 邀请码=关 / 邮箱验证=开 / 人工审核=开 |
-| 小站注册表 | `OIDC_CLIENTS`（新增小站需加一条 client） |
-| 端口暴露 | 8000/5432 外部均不可达（已核验） |
-| 已知配置事项 | HSTS 由应用层与反代层双设（值一致，已决定保留不处理） |
+| 生产域名 | `auth.komeijiv.cn`（HTTPS） |
+| 反代 | openresty（nginx 系） |
+| 已接入小站 | `music.komeijiv.cn` |
+| 注册开关 | 以 `config` 表为准（管理后台可热切换） |
+| 小站注册表 | `OIDC_CLIENTS` |
+| 端口暴露 | 8000 / 5432 外部不可达 |
 
-## 二、本地开发环境
+## 二、本地开发
 
-| 项 | 状态 |
+| 项 | 值 |
 |---|---|
-| 本地服务 | auth=8000（本地调试 SMTP_DEBUG=true，验证码在日志/响应 debug_code） |
-| 数据库 | Docker 容器（postgres:15，端口 5433，库名需含 `test`，测试脚本会校验） |
-| 测试账号 | 见本地数据库（admin1=owner 等）；密码/TOTP 密钥不记录于仓库，按需从本地数据库读取或重新绑定 |
+| 认证中心 | `http://localhost:8000` |
+| 测试库 | Docker `postgres:15`，端口 5433，库名需含 `test` |
+| 演示小站 | `test/e2e/rp.mjs`（端口 8001） |
+| 测试 | 见 `test/README.md` |
 
-> 测试脚本已入库，见 `test/README.md`。破坏性脚本（清空 users 表）会校验数据库名必须含 `test`。
+## 三、关键设计
 
-## 三、Git 信息
+- **会话**：服务端 `sessions` 表 + HttpOnly cookie；改密/封禁/删号即删会话，取代了 JWT + token_version + refresh_tokens
+- **OIDC**：`oidc-provider` v9（ESM，`.mjs` 与 CJS 主体共存）；`findAccount` 直连 `users` 表，零用户数据迁移
+- **撤销链**：登出/改密/封禁会同时清 OIDC 的 Session/Grant/RefreshToken（见 `docs/OIDC.md`）
+- **注册状态机**：三开关任意组合；首个用户自动成 owner（可配 `OWNER_EMAIL` 限制）
+- **限流**：进程内存；`/api/login` 与 OIDC 登录页共享登录失败计数
+- **CSRF**：cookie 认证 + `SITE_ORIGIN` 的 Origin 校验 + `SameSite=Lax`
+- **邮件**：SMTP 未配置或异常时 **fail-closed**（返回 502），绝不降级为回显验证码
 
-- 远程：`https://github.com/Komeiji-V/Auth-Center.git`
-- 分支：`main`（直接推送，无 PR 流程）
-- 提交规范：`feature:` / `fix:` / `security:` / `style:` / `docs:` 前缀
-- 数据库连接、环境变量等 `.env` 已被 gitignore，部署时按 `.env.example` 配置
+## 四、安全审查结论（2026-11）
 
-## 四、关键设计决策与演进史
+第三方审查 380 行，结论「中上」，问题集中在迁移接缝：
 
-- **服务端会话**（`sessions` 表）：浏览器只持 HttpOnly cookie；改密码/重置密码/改邮箱/封禁/删号都会删除该用户全部会话，立即失效（取代了原 JWT + token_version + refresh_tokens 方案）
-- **scrypt 异步化**：`hashPassword`/`verifyPassword` 使用 `crypto.scrypt` 异步版（消除事件循环阻塞，30 并发登录实测 ~123ms）
-- **限流体系**：登录锁定（5 次/15 分钟，密码与 TOTP 错误共享计数）、TOTP 操作锁定（setup/confirm/disable 共享 `totp:<uid>`）、发码频率（3~5 次/时/IP）、全局 60 次/分/IP；限流为进程内存实现，重启清零
-- **信任代理**：`TRUST_PROXY_CIDRS` 可配置（默认 loopback + Docker 网段），反代须覆写/追加 XFF（openresty 配置已按此部署）
-- **注册状态机**：三开关（邀请码/邮箱验证/人工审核）任意组合；首个注册用户自动成为 owner（跳过审核）
-- **安全演进**（三轮独立审查累计修复 27+ 项）：XFF 伪造、邀请码并发超用、TOTP 覆写/爆破、找回密码枚举、密码 oracle（统一错误消息）、验证码原子占用、限流内存膨胀等均已修复并复测
-- **安全演进（M1 → OIDC）**：早期「token 经 URL / 跨域 POST 回跳小站」的 SSO 协议已随 OIDC 迁移整体移除；M1 的历史细节保留在 `docs/REPORT-M1-sso-token-redirect.md`，仅供追溯，不再适用
-- **SMTP 强制 STARTTLS**：`mail.js` 启用 nodemailer `requireTLS`——587（secure=false）场景服务器必须支持 STARTTLS，否则报错不发信，杜绝"服务器不通告 STARTTLS 就静默降级明文"（STARTTLS 剥离攻击面）；465（secure=true）隐式 TLS 不受影响
+- 严重 1 项（SMTP 降级）、高 4 项（OIDC 撤销链、set-admin 类型混淆、全局 CORS、限流绕过）
+- 上述已全部修复并验证
+- 保留的设计取舍：`admin` 可改任意用户邮箱（产品需求：用户邮箱丢失时管理员可改），**等价于 admin 能接管任意普通账号**——目前只有 owner 一个 admin
+- 未修：账号枚举（注册提示是必要的用户体验）、`offline_access` 无 client 级限制（小站均自建）
 
-## 五、已知事项与待办
+## 五、待办
 
-- [ ] **人工审核当前为开启状态**——如需关闭，用管理后台"注册模式"或 `POST /api/admin/config`（.env 不生效，以 config 表为准）
-- [ ] **小站注册表扩容**：新增小站时在 `OIDC_CLIENTS` 加一条 client 并重启
-- [ ] **SMTP 授权码定期更换**（曾出现在对话记录中）
-- [ ] HSTS 双设（应用层+反代层）：已决定保留，值一致无害
-- [ ] 部署后的浏览器人工验收清单未全部执行（注册邮件全链路已由 owner 实测通过）
+- [ ] 生产部署新版本（含 OIDC、会话改造、安全修复）
+- [ ] 按 `docs/DEPLOY.md` 的验证清单走一遍
+- [ ] `music.komeijiv.cn` 切换到 OIDC 接入
+- [ ] SMTP 授权码定期更换
 
-## 六、给新对话/新开发者的入口指引
+## 六、给接手者
 
-1. **先读**：`README.md`（概览）→ 本文件（实况）→ 任务相关文档
-2. **写代码前**：先读 `src/` 对应文件——文档可能滞后于代码，以代码为准
-3. **接口**：以 `docs/API.md` + `src/auth.js`/`src/admin.js` 路由为准
-4. **测试前**：读 `docs/OPS.md`"测试约定"（非破坏性、临时用户、限流注意）
-5. **不要**：清库、修改现有生产数据、把 `.env`/密钥/测试脚本推入仓库
-6. **验证**：部署相关改动后按 `docs/DEPLOY.md`"部署后验证清单"抽查
+1. 先读 `README.md` → 本文件 → 任务相关文档
+2. 写代码前先读 `src/`，文档可能滞后
+3. 接口以 `docs/API.md` + `src/auth.js` / `src/admin.js` 的路由为准
+4. 改动了认证/会话/OIDC 后，跑 `npm run test:e2e` 与 `npm run test:browser`
+5. **不要**：清生产库、提交 `.env` 或 `keys/`、在非测试库上跑 `test/patch/*`

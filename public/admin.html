@@ -75,7 +75,11 @@
   .apply { color: #666; font-size: 12px; }
   .mono { font-family: monospace; font-size: 12px; }
   .code-list { max-height: 300px; overflow-y: auto; }
-  #loginCard { max-width: 420px; margin: 40px auto; }
+  /* 登录卡垂直+水平居中（与前台登录页一致）；登录后由 #app 接管布局 */
+  #loginCard {
+    max-width: 420px; width: calc(100% - 32px);
+    position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+  }
   #app { display: none; }
   .card-top {
     display: flex;
