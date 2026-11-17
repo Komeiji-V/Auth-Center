@@ -1,5 +1,6 @@
 const crypto = require('crypto');
 const db = require('./db');
+const { SECURE, SESSION_COOKIE: COOKIE_NAME } = require('./cookie-config');
 
 /**
  * 服务端会话（替代原来的 JWT + refresh token）
@@ -8,58 +9,46 @@ const db = require('./db');
  * - 会话存在 sessions 表，封禁 / 改密时可直接删除，立即失效
  * - 不需要 token_version：会话本身就是撤销单位
  * - 空闲超时：last_seen 超过 SESSION_IDLE_HOURS 未更新则视为失效（绝对上限仍是 TTL_DAYS）
+ *
+ * 同时供 Express（res.cookie）与 Koa（oidc-provider 的 ctx.cookies）使用，
+ * 所以 cookie 的拼装逻辑单独拆出来。
  */
 
 const TTL_DAYS = parseInt(process.env.SESSION_TTL_DAYS, 10) || 7;
 const IDLE_HOURS = parseInt(process.env.SESSION_IDLE_HOURS, 10) || 24;
-const { SECURE, SESSION_COOKIE: COOKIE_NAME } = require('./cookie-config');
 
-function cookieOptions() {
-  return {
-    httpOnly: true,
-    sameSite: 'lax',
-    secure: SECURE,
-    path: '/',
-    maxAge: TTL_DAYS * 24 * 60 * 60 * 1000,
-  };
-}
+const COOKIE_OPTIONS = {
+  httpOnly: true,
+  sameSite: 'lax',
+  secure: SECURE,
+  path: '/',
+  maxAge: TTL_DAYS * 24 * 60 * 60 * 1000,
+};
 
-/** 创建会话并写入 cookie */
-async function createSession(res, userId, meta = {}) {
-  const id = crypto.randomBytes(32).toString('hex');
-  await db.query(
-    `INSERT INTO sessions (id, user_id, expires_at, last_seen, ip, user_agent)
-     VALUES ($1, $2, now() + ($3 || ' days')::interval, now(), $4, $5)`,
-    [id, userId, String(TTL_DAYS), meta.ip || null, (meta.userAgent || '').slice(0, 300) || null]
-  );
-  res.cookie(COOKIE_NAME, id, cookieOptions());
-  // 迁移残留：从 ac_sid 切到 __Host-ac_sid 后，老用户浏览器里可能还留着旧 cookie，
-  // 不清掉会在关闭 Secure 时让旧会话“复活”，也会在设备列表里显示成一台未知设备
-  if (COOKIE_NAME !== 'ac_sid') {
-    res.clearCookie('ac_sid', { path: '/', secure: SECURE, sameSite: 'lax' });
+/** 从 Cookie 头里取某个 cookie 的值（Koa 的 req.cookies 不经过 cookie-parser） */
+function parseCookie(header, name) {
+  for (const part of String(header || '').split(';')) {
+    const i = part.indexOf('=');
+    if (i > 0 && part.slice(0, i).trim() === name) {
+      return decodeURIComponent(part.slice(i + 1).trim());
+    }
   }
-  return id;
+  return null;
 }
 
-/**
- * 从请求 cookie 解析会话（连带查出用户状态）
- *
- * 每次请求都会 join users 判断 status，所以封禁是立即生效的。
- * 命中后顺手把 last_seen 推进（60 秒内不重复写，避免每个静态资源都打一次库）。
- */
-async function getSession(req) {
-  const id = req.cookies && req.cookies[COOKIE_NAME];
-  if (!id) return null;
+/** 按会话 ID 查（会话 ID = cookie 值），命中后顺手推进 last_seen */
+async function findSession(sessionId) {
+  if (!sessionId) return null;
 
   const { rows } = await db.query(
-    `SELECT s.id AS sid, s.expires_at, s.last_seen,
+    `SELECT s.id AS sid, s.expires_at, s.last_seen, s.created_at,
             u.id, u.username, u.email, u.role, u.status, u.totp_enabled, u.is_owner
      FROM sessions s
      JOIN users u ON u.id = s.user_id
      WHERE s.id = $1
        AND s.expires_at > now()
        AND s.last_seen > now() - ($2 || ' hours')::interval`,
-    [id, String(IDLE_HOURS)]
+    [sessionId, String(IDLE_HOURS)]
   );
   if (!rows.length) return null;
 
@@ -69,6 +58,33 @@ async function getSession(req) {
     db.query('UPDATE sessions SET last_seen = now() WHERE id = $1', [s.sid]).catch(() => {});
   }
   return s;
+}
+
+/** 只写会话记录，返回 id（不碰任何 res/ctx，调用方自己写 cookie） */
+async function createSessionRecord(userId, meta = {}) {
+  const id = crypto.randomBytes(32).toString('hex');
+  await db.query(
+    `INSERT INTO sessions (id, user_id, expires_at, last_seen, ip, user_agent)
+     VALUES ($1, $2, now() + ($3 || ' days')::interval, now(), $4, $5)`,
+    [id, userId, String(TTL_DAYS), meta.ip || null, (meta.userAgent || '').slice(0, 300) || null]
+  );
+  return id;
+}
+
+/** Express 用：建会话并下发 cookie */
+async function createSession(res, userId, meta = {}) {
+  const id = await createSessionRecord(userId, meta);
+  res.cookie(COOKIE_NAME, id, COOKIE_OPTIONS);
+  // 迁移残留：从 ac_sid 切到 __Host-ac_sid 后，老用户浏览器里可能还留着旧 cookie
+  if (COOKIE_NAME !== 'ac_sid') {
+    res.clearCookie('ac_sid', { path: '/', secure: SECURE, sameSite: 'lax' });
+  }
+  return id;
+}
+
+/** Express 用：从 req.cookies 解析会话 */
+async function getSession(req) {
+  return findSession(req.cookies && req.cookies[COOKIE_NAME]);
 }
 
 /** 销毁当前会话（登出） */
@@ -111,8 +127,13 @@ async function listSessions(userId) {
 
 module.exports = {
   COOKIE_NAME,
+  SECURE,
   TTL_DAYS,
   IDLE_HOURS,
+  COOKIE_OPTIONS,
+  parseCookie,
+  findSession,
+  createSessionRecord,
   createSession,
   getSession,
   destroySession,

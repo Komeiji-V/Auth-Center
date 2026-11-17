@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import { authenticator } from 'otplib';
 import db from '../db.js';
 import auth from '../auth.js';
+import session from '../session.js';
 import rateLimit from '../rateLimit.js';
 
 /**
@@ -162,6 +163,20 @@ async function handleLogin(provider, ctx, uid, body) {
   loginSuccess(lockKey);
   db.audit(u.username, 'oidc_login_success', ip, '').catch(() => {});
 
+  // 反向桥接：在小站登录成功后顺手建一个本站会话，
+  // 这样用户回到 /profile、/admin 时不用再登录一次
+  const curSid = session.parseCookie(ctx.req.headers.cookie, session.COOKIE_NAME);
+  const curSession = curSid ? await session.findSession(curSid) : null;
+  if (!curSession) {
+    const newSid = await session.createSessionRecord(u.id, {
+      ip,
+      userAgent: ctx.req.headers['user-agent'],
+    });
+    // signed: false —— provider 的 Koa app 配了 keys，默认会给 cookie 加签名后缀；
+    // 本站用 cookie-parser 读，不需要 .sig，留着只会多一个 cookie
+    ctx.cookies.set(session.COOKIE_NAME, newSid, { ...session.COOKIE_OPTIONS, signed: false });
+  }
+
   await provider.interactionFinished(
     ctx.req,
     ctx.res,
@@ -209,6 +224,29 @@ export function interactionMiddleware(provider) {
         if (details.prompt.name !== 'login') {
           ctx.status = 400;
           ctx.body = `未预期的交互步骤: ${details.prompt.name}`;
+          return;
+        }
+
+        // 完整 SSO：本站会话仍有效时不再要求重复输密码。
+        // 这是「在 /login 登录过之后，进小站不用再登」的实现点。
+        const existingSid = session.parseCookie(ctx.req.headers.cookie, session.COOKIE_NAME);
+        const existing = await session.findSession(existingSid);
+        if (existing && existing.status === 'active') {
+          await provider.interactionFinished(
+            ctx.req,
+            ctx.res,
+            {
+              login: {
+                accountId: String(existing.id),
+                // 用会话创建时间作为 auth_time，避免把很久以前登录的会话标成「刚刚认证」
+                ts: Math.floor(new Date(existing.created_at).getTime() / 1000),
+                acr: 'urn:mace:incommon:iap:bronze',
+                amr: ['pwd'],
+              },
+            },
+            { mergeWithLastSubmission: false }
+          );
+          ctx.respond = false;
           return;
         }
 
