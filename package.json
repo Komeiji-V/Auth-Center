@@ -6,10 +6,10 @@
   "main": "src/server.js",
   "scripts": {
     "start": "node src/server.js",
-    "test": "node --test test/e2e/",
+    "test": "node --test --test-concurrency=1 test/e2e/",
     "test:patch": "node test/patch/run-test.js",
     "test:migration": "node test/patch/test-migration.js",
-    "test:e2e": "node --test test/e2e/",
+    "test:e2e": "node --test --test-concurrency=1 test/e2e/",
     "test:browser": "node test/browser/run.js"
   },
   "dependencies": {
