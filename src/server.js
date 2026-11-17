@@ -18,26 +18,10 @@ const trustedProxy = (process.env.TRUST_PROXY_CIDRS || 'loopback,172.16.0.0/12,1
   .filter(Boolean);
 app.set('trust proxy', trustedProxy);
 
-// CORS_ORIGINS 解析：new URL 规范化 + 严格格式校验（仅 http(s)://host[:port]，防 CSP 指令注入）
-// 非法/无法解析的条目直接丢弃，保证拼进 CSP connect-src 的值必然安全
-const origins = Array.from(new Set(
-  (process.env.CORS_ORIGINS || '')
-    .split(',')
-    .map((s) => s.trim())
-    .filter(Boolean)
-    .map((s) => {
-      try {
-        const u = new URL(s);
-        return /^https?:\/\/[a-zA-Z0-9.\-:[\]]+$/.test(u.origin) ? u.origin : null;
-      } catch {
-        return null;
-      }
-    })
-    .filter(Boolean)
-));
-// CSP connect-src 只放行 'self'。
-// 早期为「登录页跨域 POST 凭证 /api/auth/sso」放行过小站 origin，该端点已随 OIDC 迁移删除；
-// origins 仍保留给 /api/config 的 redirect_origins（totp 页跳转白名单）与 CORS 说明。
+// 说明：这里曾解析 CORS_ORIGINS 供全局 CORS 与 CSP connect-src 使用。
+// CORS 中间件已随旧 SSO 回跳协议删除，connect-src 也已收回为 'self'，
+// 该解析没有使用点。CORS_ORIGINS 仍由 /api/config 的 redirect_origins 独立解析。
+
 const connectSrc = "'self'";
 
 app.disable('x-powered-by');
@@ -71,14 +55,17 @@ app.use((req, res, next) => {
 // 必须在 OIDC 之前：否则 /auth /token /interaction 完全不受限，
 // 等于给撞库和密码喷洒留了无限次入口。
 const GLOBAL_REQ_PER_MIN = parseInt(process.env.GLOBAL_REQ_PER_MIN, 10) || 60;
-const OIDC_EXEMPT = new Set(['/jwks', '/me']);
 app.use((req, res, next) => {
-  // 豁免：发现文档、公钥、userinfo
-  // /me 豁免是因为 BFF 模式下所有用户共享小站服务器的同一个出口 IP，
-  // 按 IP 限流会让整个小站被一个人的流量拖垮
-  if (OIDC_EXEMPT.has(req.path) || req.path.startsWith('/.well-known')) return next();
+  // 静态/廉价端点完全豁免
+  if (req.path === '/jwks' || req.path.startsWith('/.well-known')) return next();
 
-  if (!ipRateLimit(req.ip, 60 * 1000, GLOBAL_REQ_PER_MIN)) {
+  // /me 是 DB 端点，不能完全豁免（未认证也能打），但 BFF 下所有用户共享小站出口 IP，
+  // 所以给它单独的桶、10 倍额度
+  const isUserinfo = req.path === '/me';
+  const max = isUserinfo ? GLOBAL_REQ_PER_MIN * 10 : GLOBAL_REQ_PER_MIN;
+  const key = isUserinfo ? `me:${req.ip}` : req.ip;
+
+  if (!ipRateLimit(key, 60 * 1000, max)) {
     res.setHeader('Retry-After', '60');
     // OIDC 端点按 OAuth 错误形态返回，避免客户端库解析失败
     const isOAuth = req.path === '/token' || req.path === '/auth';

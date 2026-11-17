@@ -19,9 +19,22 @@ const SITE_TITLE = process.env.SITE_TITLE || '认证中心';
 // 共享计数，否则可以从另一条路径绕过 5 次锁定。
 const { loginAttempt, loginSuccess } = rateLimit;
 
+// 上限 8KB：登录表单只有三个短字段，超出直接 413。
+// 不设限时一次 300KB 的 login 会写一条 300KB 的审计、占一个 300KB 的限流 key、返回 300KB 的响应。
+const MAX_BODY = 8 * 1024;
+
 async function readBody(req) {
   const chunks = [];
-  for await (const chunk of req) chunks.push(chunk);
+  let size = 0;
+  for await (const chunk of req) {
+    size += chunk.length;
+    if (size > MAX_BODY) {
+      const err = new Error('BODY_TOO_LARGE');
+      err.status = 413;
+      throw err;
+    }
+    chunks.push(chunk);
+  }
   return new URLSearchParams(Buffer.concat(chunks).toString());
 }
 
@@ -93,7 +106,7 @@ function renderLogin(uid, { error = '', username = '', needTotp = false } = {}) 
 }
 
 async function handleLogin(provider, ctx, uid, body) {
-  const username = (body.get('login') || '').trim();
+  const username = (body.get('login') || '').trim().slice(0, 64);   // 截断，防超长输入进审计与限流 key
   const password = body.get('password') || '';
   const totpCode = (body.get('totp') || '').trim();
   // oidc-provider 不读 XFF，用 server.js 注入的真实 IP，否则锁定 key 的 IP 维度会是反代地址
@@ -209,6 +222,12 @@ export function interactionMiddleware(provider) {
 
       ctx.status = 405;
     } catch (e) {
+      if (e.status === 413) {
+        ctx.status = 413;
+        ctx.type = 'text/plain';
+        ctx.body = '请求体过大';
+        return;
+      }
       console.error('[oidc interaction] error:', e);
       ctx.status = 500;
       ctx.type = 'text/plain';

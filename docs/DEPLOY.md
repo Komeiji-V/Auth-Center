@@ -29,6 +29,7 @@ cp .env.example .env
 
 | 变量 | 说明 |
 |---|---|
+| `NODE_ENV` | **必须 `production`**（Dockerfile 已设；非 Docker 部署如 systemd/pm2 必须自己加） |
 | `DATABASE_URL` | PostgreSQL 15 连接串（首次启动自动建表） |
 | `SITE_ORIGIN` | **本站完整地址**，如 `https://auth.example.com`；用于 CSRF，缺失会打印 `[security]` 警告 |
 | `COOKIE_SECURE` | 生产 `true` |

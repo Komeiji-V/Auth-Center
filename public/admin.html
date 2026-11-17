@@ -317,7 +317,16 @@ function enterApp() {
 }
 
 async function logout() {
-  try { await fetch('/api/logout', { method: 'POST' }); } catch {}
+  try {
+    const r = await fetch('/api/logout', { method: 'POST' });
+    if (!r.ok) {
+      alert('退出失败：小站授权撤销未完成，会话仍在。请重试。');
+      return;
+    }
+  } catch (err) {
+    alert('退出失败：' + err.message);
+    return;
+  }
   location.href = '/login';
 }
 

@@ -14,6 +14,9 @@ function initMail() {
   }
   if (!process.env.SMTP_HOST) {
     // 不降级为调试模式：否则「SMTP 没配好」会变成「验证码直接出现在 HTTP 响应里」
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error('生产环境必须配置 SMTP_HOST（否则注册/找回密码全部 502）');
+    }
     console.error('[mail] 未配置 SMTP_HOST：验证码类接口会返回 502，不会静默降级');
     return;
   }
@@ -25,6 +28,13 @@ function initMail() {
     // 杜绝"服务器不通告 STARTTLS 就静默降级明文"（STARTTLS 剥离攻击面）；465（secure=true）下无影响
     requireTLS: true,
     auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
+    // 默认的 connectionTimeout 是 120s、socketTimeout 10min，
+    // SMTP 挂住时会把注册/找回密码请求一起挂住
+    pool: true,
+    maxConnections: 3,
+    connectionTimeout: 10000,
+    greetingTimeout: 10000,
+    socketTimeout: 20000,
   });
 }
 

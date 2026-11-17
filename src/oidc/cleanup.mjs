@@ -33,6 +33,7 @@ export function startCleanup(provider) {
     }
 
     for (const r of rows) {
+      try {
       // 重试上限：小站长期离线时不无限堆积
       if (r.attempts >= 10) {
         console.error(`[oidc retry] ${r.client_id} 重试 ${r.attempts} 次仍失败，放弃（sub=${r.sub}）`);
@@ -59,6 +60,10 @@ export function startCleanup(provider) {
            WHERE id = $1`,
           [r.id, String(delaySec), e.message]
         );
+      }
+      } catch (e) {
+        // 单条记录处理失败不能影响整批，更不能让 interval 回调 reject（会按 uncaught 退出进程）
+        console.error(`[oidc retry] 处理记录 ${r.id} 失败:`, e.message);
       }
     }
   }, RETRY_INTERVAL_MS).unref();

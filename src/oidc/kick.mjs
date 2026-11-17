@@ -67,7 +67,15 @@ export async function kickAccount(provider, accountId) {
 export async function revokeAccount(provider, accountId) {
   const id = String(accountId);
 
-  const kicked = await kickAccount(provider, id);
+  // back-channel 通知是「尽力而为」，删凭据是安全关键步骤。
+  // 通知阶段任何一处 DB 抖动都不能让它挡住后面的 DELETE —— 否则密码已改、
+  // 本站会话已删，攻击者的 refresh token 却还在。
+  let kicked = { sessions: 0, notified: [] };
+  try {
+    kicked = await kickAccount(provider, id);
+  } catch (e) {
+    console.error('[oidc revoke] back-channel 阶段失败，继续删除凭据:', e.message);
+  }
 
   const r = await db.query(
     `DELETE FROM oidc_payloads

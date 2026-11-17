@@ -33,6 +33,11 @@ async function createSession(res, userId, meta = {}) {
     [id, userId, String(TTL_DAYS), meta.ip || null, (meta.userAgent || '').slice(0, 300) || null]
   );
   res.cookie(COOKIE_NAME, id, cookieOptions());
+  // 迁移残留：从 ac_sid 切到 __Host-ac_sid 后，老用户浏览器里可能还留着旧 cookie，
+  // 不清掉会在关闭 Secure 时让旧会话“复活”，也会在设备列表里显示成一台未知设备
+  if (COOKIE_NAME !== 'ac_sid') {
+    res.clearCookie('ac_sid', { path: '/', secure: SECURE, sameSite: 'lax' });
+  }
   return id;
 }
 

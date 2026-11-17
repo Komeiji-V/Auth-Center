@@ -24,15 +24,23 @@ function validId(v) {
  */
 async function kickIfEnabled(req, userId) {
   const oidc = req.app.locals && req.app.locals.oidc;
-  if (!oidc) return;
+  if (!oidc) return { ok: true };
   try {
     const r = await oidc.revokeAccount(userId);
     if (r.sessions || r.revoked) {
       console.log(`[admin] revoke sub=${userId} sessions=${r.sessions} tokens=${r.revoked}`);
     }
+    return { ok: true, ...r };
   } catch (e) {
-    console.error('[admin] kick failed:', e.message);
+    // 不能静默：管理端看到「成功」而小站凭据仍在，是最危险的一类假象
+    console.error('[admin] revoke failed:', e.message);
+    return { ok: false, error: e.message };
   }
+}
+
+/** 撤销失败时附在响应里的提示 */
+function revokeWarning(r) {
+  return r && r.ok === false ? { warning: '小站授权撤销失败，请重试或改密后再试' } : {};
 }
 
 async function loadUser(id) {
@@ -200,10 +208,10 @@ router.post('/users/:id/ban', ...adminGuard, async (req, res) => {
     );
     await session.destroyUserSessions(id);
     // 通知小站清掉该用户的会话（封禁后下次授权也会被 findAccount 拒绝）
-    await kickIfEnabled(req, id);
+    const banRevoke = await kickIfEnabled(req, id);
     db.audit(req.user.username, 'user_ban', req.ip, `target=${u.username}`);
     mail.sendNotify(u.email, 'banned').catch((e) => console.error('[notify] banned failed:', e.message));
-    res.json({ ok: true, user: { id: u.id, username: u.username, email: u.email, status: 'banned' } });
+    res.json({ ok: true, user: { id: u.id, username: u.username, email: u.email, status: 'banned' }, ...revokeWarning(banRevoke) });
   } catch (e) {
     console.error('[ban] error:', e);
     res.status(500).json({ error: '服务器内部错误' });
@@ -228,10 +236,10 @@ router.post('/users/:id/unban', ...adminGuard, async (req, res) => {
     );
     const u = rows[0];
     // 解封时再清一次：封禁期间可能已积累旧的 refresh token，不清会导致解封后立刻复活
-    await kickIfEnabled(req, id);
+    const unbanRevoke = await kickIfEnabled(req, id);
     db.audit(req.user.username, 'user_unban', req.ip, `target=${u.username}`);
     mail.sendNotify(u.email, 'unbanned').catch((e) => console.error('[notify] unbanned failed:', e.message));
-    res.json({ ok: true, user: u });
+    res.json({ ok: true, user: u, ...revokeWarning(unbanRevoke) });
   } catch (e) {
     console.error('[unban] error:', e);
     res.status(500).json({ error: '服务器内部错误' });
@@ -302,6 +310,7 @@ router.post('/users/:id/edit', ...adminGuard, async (req, res) => {
 
     let newUsername = u.username;
     let newEmail = u.email;
+    let editRevoke = null;
     if (username !== undefined && username !== '') {
       if (!USERNAME_RE.test(username)) return res.status(400).json({ error: '用户名需为 2-20 位中文、字母、数字或下划线' });
       const { rows: dup } = await db.query(
@@ -324,7 +333,7 @@ router.post('/users/:id/edit', ...adminGuard, async (req, res) => {
       if (newEmail !== u.email) {
         await session.destroyUserSessions(id);
         // 与自助改邮箱路径对齐：管理员改邮箱同样要撤销小站凭据
-        await kickIfEnabled(req, id);
+        editRevoke = await kickIfEnabled(req, id);
       }
     }
     if (newUsername !== u.username || newEmail !== u.email) {
@@ -332,7 +341,7 @@ router.post('/users/:id/edit', ...adminGuard, async (req, res) => {
       await db.query('UPDATE users SET username = $1, email = $2 WHERE id = $3', [newUsername, newEmail, id]);
       db.audit(req.user.username, 'user_edit', req.ip, `target=${u.username} -> ${newUsername}/${newEmail}`);
     }
-    res.json({ ok: true, user: { id: u.id, username: newUsername, email: newEmail } });
+    res.json({ ok: true, user: { id: u.id, username: newUsername, email: newEmail }, ...revokeWarning(editRevoke) });
   } catch (e) {
     console.error('[edit] error:', e);
     res.status(500).json({ error: '服务器内部错误' });

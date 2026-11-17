@@ -89,6 +89,15 @@ async function initSchema() {
       expires_at TIMESTAMPTZ NOT NULL
     )
   `);
+  // 用户名大小写唯一：UNIQUE(username) 大小写敏感，允许 "Bob" 和 "bob" 并存；
+  // 而登录用 LOWER(username) 查询，命中两行时结果不确定（其中一个账号永远登不上）
+  try {
+    await query(`CREATE UNIQUE INDEX IF NOT EXISTS users_username_lower_uniq ON users (LOWER(username))`);
+  } catch (e) {
+    // 已有存量重复时索引建不起来，不能让服务起不来；日志提示人工清理
+    console.error('[db] 无法创建 LOWER(username) 唯一索引（可能存在大小写重复的用户名）:', e.message);
+  }
+
   await query('CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions (user_id)');
   await query('CREATE INDEX IF NOT EXISTS idx_sessions_exp  ON sessions (expires_at)');
   // 会话卫生：最后活跃时间（空闲超时用）、来源 IP 与 UA（设备列表用）
@@ -227,7 +236,13 @@ async function setConfig(key, value) {
 }
 
 async function audit(actor, action, ip, detail) {
-  await query('INSERT INTO audit_log (actor, action, ip, detail) VALUES ($1, $2, $3, $4)', [actor, action, ip || null, detail || null]);
+  // 截断：审计是「记录发生了什么」，不是「存用户输入」。超长值会撑爆磁盘。
+  await query('INSERT INTO audit_log (actor, action, ip, detail) VALUES ($1, $2, $3, $4)', [
+    String(actor ?? '').slice(0, 128),
+    String(action ?? '').slice(0, 64),
+    ip || null,
+    String(detail ?? '').slice(0, 512) || null,
+  ]);
 }
 
 module.exports = { initDb, initSchema, query, withTransaction, getConfig, setConfig, getRegistrationFlags, audit };
