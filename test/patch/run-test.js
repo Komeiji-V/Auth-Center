@@ -90,7 +90,7 @@ async function main() {
 
   // ---- 清场，保证可重复运行 ----
   await db.query(
-    `TRUNCATE users, codes, refresh_tokens, invite_codes, invite_usage_log, audit_log, config
+    `TRUNCATE users, codes, invite_codes, invite_usage_log, audit_log, config
      RESTART IDENTITY CASCADE`
   );
   await db.query(

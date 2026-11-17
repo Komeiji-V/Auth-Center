@@ -178,9 +178,6 @@ setInterval(async () => {
 
 async function main() {
   if (!process.env.DATABASE_URL) throw new Error('缺少 DATABASE_URL 环境变量');
-  if (!process.env.OIDC_COOKIE_SECRET || process.env.OIDC_COOKIE_SECRET.startsWith('CHANGE_ME')) {
-    throw new Error('请设置 OIDC_COOKIE_SECRET（openssl rand -hex 32）');
-  }
   await db.initDb(process.env.DATABASE_URL);
   await db.initSchema();
   mail.initMail();
@@ -206,6 +203,10 @@ async function main() {
 
   // OIDC：复用现有 users 表；旧的 /api/login 保留，过渡期双轨运行
   if (process.env.OIDC_ENABLED === 'true') {
+    // 只有开启 OIDC 才需要这个密钥；关掉时不该逼用户生成一个用不到的
+    if (!process.env.OIDC_COOKIE_SECRET || process.env.OIDC_COOKIE_SECRET.startsWith('CHANGE_ME')) {
+      throw new Error('请设置 OIDC_COOKIE_SECRET（openssl rand -hex 32）');
+    }
     const { createOidc } = await import('./oidc/bootstrap.mjs');
     oidc = await createOidc();
     app.locals.oidc = oidc;

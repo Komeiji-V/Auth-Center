@@ -3,7 +3,15 @@ const { Pool } = require('pg');
 let pool = null;
 
 function initDb(databaseUrl) {
-  pool = new Pool({ connectionString: databaseUrl, max: 10 });
+  pool = new Pool({
+    connectionString: databaseUrl,
+    max: 10,
+    // 默认 connectionTimeoutMillis=0 意味着 DB 宕机时请求会无限挂起（表现为「网站卡住」而不是 500）
+    connectionTimeoutMillis: 5000,
+    idleTimeoutMillis: 30000,
+    statement_timeout: 10000,
+    query_timeout: 10000,
+  });
   pool.on('error', (err) => {
     console.error('[db] idle client error:', err.message);
   });
@@ -146,6 +154,8 @@ async function initSchema() {
       created_at TIMESTAMPTZ NOT NULL DEFAULT now()
     )
   `);
+  // 每日按 created_at 删 90 天前数据，表会持续增长，值得一条索引
+  await query('CREATE INDEX IF NOT EXISTS idx_audit_created ON audit_log (created_at)');
 
   // ===== OIDC（oidc-provider）持久化 =====
   // Session / Grant / AccessToken / RefreshToken / AuthorizationCode / Interaction / ReplayDetection
@@ -237,12 +247,18 @@ async function setConfig(key, value) {
 
 async function audit(actor, action, ip, detail) {
   // 截断：审计是「记录发生了什么」，不是「存用户输入」。超长值会撑爆磁盘。
-  await query('INSERT INTO audit_log (actor, action, ip, detail) VALUES ($1, $2, $3, $4)', [
-    String(actor ?? '').slice(0, 128),
-    String(action ?? '').slice(0, 64),
-    ip || null,
-    String(detail ?? '').slice(0, 512) || null,
-  ]);
+  // 吞掉写入异常：30 处调用里 27 处没有 await / catch，一次 INSERT 失败
+  // 就会变成 unhandledRejection，Node 22 默认直接退出进程。
+  try {
+    await query('INSERT INTO audit_log (actor, action, ip, detail) VALUES ($1, $2, $3, $4)', [
+      String(actor ?? '').slice(0, 128),
+      String(action ?? '').slice(0, 64),
+      ip || null,
+      String(detail ?? '').slice(0, 512) || null,
+    ]);
+  } catch (e) {
+    console.error('[audit] 写入失败:', e.message);
+  }
 }
 
 module.exports = { initDb, initSchema, query, withTransaction, getConfig, setConfig, getRegistrationFlags, audit };

@@ -3,6 +3,15 @@ const puppeteer = require('puppeteer-core');
 const path = require('path');
 const fs = require('fs');
 
+// 换机器不用改代码：优先 CHROME_PATH，其次常见安装位置
+const CHROME_PATH = process.env.CHROME_PATH
+  || ['/usr/bin/google-chrome', '/usr/bin/chromium', '/usr/bin/chromium-browser',
+      '/home/ubuntu-chen/tools/bin/google-chrome'].find((p) => { try { return fs.existsSync(p); } catch { return false; } });
+if (!CHROME_PATH) {
+  console.error('找不到 Chrome/Chromium，请设置环境变量 CHROME_PATH');
+  process.exit(1);
+}
+
 const BASE = 'http://localhost:8000';
 const ACCOUNT = 'alice';
 const PASSWORD = 'Passw0rd!123';
@@ -28,7 +37,7 @@ const check = (name, cond, detail) => {
   process.env.TMPDIR = TMP;
 
   const browser = await puppeteer.launch({
-    executablePath: process.env.CHROME_PATH || '/home/ubuntu-chen/tools/bin/google-chrome',
+    executablePath: CHROME_PATH,
     headless: true,
     userDataDir: path.join(__dirname, 'chrome-profile'),
     args: ['--no-sandbox', '--disable-dev-shm-usage'],

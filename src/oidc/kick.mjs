@@ -71,9 +71,13 @@ export async function revokeAccount(provider, accountId) {
   // 通知阶段任何一处 DB 抖动都不能让它挡住后面的 DELETE —— 否则密码已改、
   // 本站会话已删，攻击者的 refresh token 却还在。
   let kicked = { sessions: 0, notified: [] };
+  let kickError = null;
   try {
     kicked = await kickAccount(provider, id);
   } catch (e) {
+    // 通知失败不阻断删凭据，但必须把错误暴露给调用方，
+    // 否则管理端会看到 {ok:true} 而小站一个 logout 都没收到
+    kickError = e.message;
     console.error('[oidc revoke] back-channel 阶段失败，继续删除凭据:', e.message);
   }
 
@@ -85,5 +89,5 @@ export async function revokeAccount(provider, accountId) {
   );
 
   console.log(`[oidc revoke] sub=${id} 会话 ${kicked.sessions} 个，凭据 ${r.rowCount} 条`);
-  return { ...kicked, revoked: r.rowCount };
+  return { ...kicked, revoked: r.rowCount, kickError };
 }

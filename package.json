@@ -2,7 +2,7 @@
   "name": "auth-center",
   "version": "1.0.0",
   "private": true,
-  "description": "轻量自研认证中心：注册/邮箱验证/审核/封禁/邀请码/JWT",
+  "description": "自建统一身份认证中心：OIDC + 账号管理（注册/审核/邀请码/TOTP）",
   "main": "src/server.js",
   "scripts": {
     "start": "node src/server.js",
@@ -14,7 +14,6 @@
   },
   "dependencies": {
     "cookie-parser": "^1.4.7",
-    "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
     "jose": "^6.2.17",

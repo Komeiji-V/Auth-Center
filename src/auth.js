@@ -272,7 +272,8 @@ router.post('/register', async (req, res) => {
     }
 
     // 无邮箱验证：注册即完成
-    const initialStatus = flags.review_required ? 'pending' : 'active';
+    // 首个用户是 owner，不能进 pending（否则无人可审、也无人能登录）
+    const initialStatus = flags.review_required && !isFirst ? 'pending' : 'active';
     await db.query(
       `UPDATE users SET status = $1 WHERE LOWER(email) = $2 AND status = 'pending'`,
       [initialStatus, normEmail]
@@ -381,7 +382,7 @@ router.post('/login', async (req, res) => {
       }
       if (!ok) {
         db.audit(u.username, 'login_fail', ip, 'bad_totp');
-        loginAttempt(lockKey);
+        // 入口处已计过一次，这里再计会让 TOTP 用户 3 次就锁（OIDC 入口是 5 次）
         return res.status(401).json({ error: failMsg() });
       }
     }

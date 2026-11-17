@@ -13,8 +13,11 @@ const router = express.Router();
 const adminGuard = createAdminMiddleware(process.env.ADMIN_TOTP_REQUIRED === 'true');
 
 function validId(v) {
-  const id = parseInt(v, 10);
-  return Number.isInteger(id) ? id : null;
+  // parseInt 是宽松的：'2abc' 会得到 2，于是 ban/edit 会静默落到另一个用户上
+  const s = String(v);
+  if (!/^\d+$/.test(s)) return null;
+  const id = parseInt(s, 10);
+  return Number.isSafeInteger(id) && id > 0 ? id : null;
 }
 
 /**
@@ -30,6 +33,8 @@ async function kickIfEnabled(req, userId) {
     if (r.sessions || r.revoked) {
       console.log(`[admin] revoke sub=${userId} sessions=${r.sessions} tokens=${r.revoked}`);
     }
+    // 凭据已删，但 back-channel 通知失败：管理端需要知道「小站可能要等 refresh 失败才登出」
+    if (r.kickError) return { ok: false, error: r.kickError, ...r };
     return { ok: true, ...r };
   } catch (e) {
     // 不能静默：管理端看到「成功」而小站凭据仍在，是最危险的一类假象
