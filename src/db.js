@@ -47,6 +47,7 @@ async function initSchema() {
       status TEXT NOT NULL DEFAULT 'pending',
       role TEXT NOT NULL DEFAULT 'user',
       totp_secret TEXT,
+      totp_pending_secret TEXT,
       totp_enabled BOOLEAN NOT NULL DEFAULT FALSE,
       invite_code_used TEXT,
       apply_info TEXT,
@@ -74,6 +75,8 @@ async function initSchema() {
     await query(`UPDATE users SET email_verified = TRUE WHERE status IN ('active', 'banned')`);
     console.log('[db] migration: users.email_verified 已添加并回填');
   }
+  // TOTP 重绑的待确认密钥：无条件补列（幂等），不受上面「首次回填」分支影响
+  await query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS totp_pending_secret TEXT`);
   await query(`
     CREATE TABLE IF NOT EXISTS codes (
       id SERIAL PRIMARY KEY,

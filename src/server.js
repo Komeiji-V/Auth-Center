@@ -153,12 +153,29 @@ setInterval(async () => {
 
       // 清理 24 小时仍未完成邮箱验证的 pending 用户（僵尸注册）
       // email_verified=TRUE 的真·待审用户不在删除范围；无邮箱验证的注册在 INSERT 时即置 true，同样不受影响
-      await client.query(`
-        DELETE FROM users
+      // 先查出待删用户，把他们占用的邀请码配额回滚（与发信失败、审核拒绝两条路径保持一致）
+      const { rows: zombies } = await client.query(`
+        SELECT id, email, invite_code_used FROM users
         WHERE status = 'pending'
           AND email_verified = FALSE
           AND created_at < now() - interval '24 hours'
       `);
+      for (const z of zombies) {
+        if (!z.invite_code_used) continue;
+        await client.query(
+          `UPDATE invite_codes
+           SET used_count = GREATEST(used_count - 1, 0), used_by = NULL, used_at = NULL
+           WHERE code = $1 AND used_by = $2`,
+          [z.invite_code_used, z.email]
+        );
+        await client.query('DELETE FROM invite_usage_log WHERE code = $1 AND email = $2', [
+          z.invite_code_used,
+          z.email,
+        ]);
+      }
+      if (zombies.length) {
+        await client.query('DELETE FROM users WHERE id = ANY($1)', [zombies.map((z) => z.id)]);
+      }
 
       await client.query(`DELETE FROM audit_log WHERE created_at < now() - interval '90 days'`);
       await client.query(`DELETE FROM invite_usage_log WHERE created_at < now() - interval '90 days'`);

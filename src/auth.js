@@ -679,7 +679,9 @@ router.post('/profile/totp-setup', profileAuth, async (req, res) => {
       }
     }
     const secret = authenticator.generateSecret(20);
-    await db.query('UPDATE users SET totp_secret = $1 WHERE id = $2', [secret, req.user.id]);
+    // 写 pending 而不是直接覆盖：重绑过程中旧 secret 仍然有效，
+    // 用户万一没保存新二维码也不会把自己锁死
+    await db.query('UPDATE users SET totp_pending_secret = $1 WHERE id = $2', [secret, req.user.id]);
     const uri = authenticator.keyuri(req.user.username, 'AuthCenter', secret);
     const qr = await QRCode.toDataURL(uri);
     res.json({ ok: true, secret, uri, qr });
@@ -694,18 +696,26 @@ router.post('/profile/totp-confirm', profileAuth, async (req, res) => {
   try {
     const { code } = req.body || {};
     if (!code) return res.status(400).json({ error: '请输入验证码' });
-    const { rows } = await db.query('SELECT totp_secret FROM users WHERE id = $1', [req.user.id]);
-    if (rows.length === 0 || !rows[0].totp_secret) return res.status(400).json({ error: '请先生成绑定密钥' });
+    const { rows } = await db.query('SELECT totp_pending_secret FROM users WHERE id = $1', [req.user.id]);
+    if (rows.length === 0 || !rows[0].totp_pending_secret) {
+      return res.status(400).json({ error: '请先生成绑定密钥' });
+    }
     let ok = false;
     try {
-      ok = authenticator.check(code, rows[0].totp_secret);
+      ok = authenticator.check(code, rows[0].totp_pending_secret);
     } catch { ok = false; }
     if (!ok) {
       // 与 setup/disable 共享失败计数
       const ck = loginAttempt(`totp:${req.user.id}`);
       return res.status(401).json({ error: ck.locked ? '尝试次数过多，请稍后再试' : '验证码错误' });
     }
-    await db.query('UPDATE users SET totp_enabled = TRUE WHERE id = $1', [req.user.id]);
+    // 确认成功才把 pending 提升为正式 secret
+    await db.query(
+      `UPDATE users
+       SET totp_secret = totp_pending_secret, totp_enabled = TRUE, totp_pending_secret = NULL
+       WHERE id = $1`,
+      [req.user.id]
+    );
     db.audit(req.user.username, 'totp_enable', req.ip, '');
     res.json({ ok: true, message: 'TOTP 已绑定' });
   } catch (e) {
@@ -724,6 +734,7 @@ router.post('/profile/totp-disable', profileAuth, async (req, res) => {
     if (rows.length === 0 || !rows[0].totp_secret) return res.status(400).json({ error: 'TOTP 数据异常' });
     let ok = false;
     try {
+      // 解绑校验的是当前生效的 secret，不是 pending
       ok = authenticator.check(code, rows[0].totp_secret);
     } catch { ok = false; }
     if (!ok) {

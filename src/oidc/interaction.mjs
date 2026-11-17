@@ -99,7 +99,10 @@ function renderLogin(uid, { error = '', username = '', needTotp = false } = {}) 
     <label for="totp">TOTP 验证码${needTotp ? '' : '（未开启可留空）'}</label>
     <input id="totp" name="totp" inputmode="numeric" autocomplete="one-time-code" placeholder="6 位数字">
     <button type="submit">登录</button>
-    <p class="hint">使用认证中心账号登录</p>
+    <p class="hint">
+      使用认证中心账号登录 ·
+      <a href="/forgot" style="color:#2563eb;">忘记密码</a>
+    </p>
   </form>
 </body>
 </html>`;
